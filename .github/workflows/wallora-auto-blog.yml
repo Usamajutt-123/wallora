@@ -1,0 +1,26 @@
+# WALLORA — auto AI blog draft Mon/Wed/Fri (free GitHub Actions scheduler).
+# Requires repo Secrets:
+#   WALLORA_SITE_URL    = https://your-app.vercel.app   (no trailing slash)
+#   WALLORA_CRON_SECRET = same value as the CRON_SECRET env on Vercel
+# Drafts land as PENDING — they only go public after you publish in Admin.
+# Scheduled workflows only run on the DEFAULT branch.
+
+name: wallora-auto-blog
+
+on:
+  schedule:
+    - cron: '0 9 * * 1,3,5'   # Mon/Wed/Fri 09:00 UTC = 14:00 PKT
+  workflow_dispatch: {}
+
+jobs:
+  blog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger AI blog draft
+        run: |
+          curl -sS -f --retry 2 --retry-delay 20 --max-time 240 \
+            -H "Authorization: Bearer ${{ secrets.WALLORA_CRON_SECRET }}" \
+            -H "User-Agent: github-actions-wallora" \
+            "${{ secrets.WALLORA_SITE_URL }}/api/cron/auto-blog" \
+            || echo "auto-blog failed — will try again next scheduled day"

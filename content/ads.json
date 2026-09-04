@@ -1,0 +1,27 @@
+{
+  "home-top": {
+    "enabled": false,
+    "code": "",
+    "height": 96
+  },
+  "home-mid": {
+    "enabled": false,
+    "code": "",
+    "height": 110
+  },
+  "feed-inline": {
+    "enabled": false,
+    "code": "",
+    "height": 110
+  },
+  "wallpaper-side": {
+    "enabled": false,
+    "code": "",
+    "height": 260
+  },
+  "blog-bottom": {
+    "enabled": false,
+    "code": "",
+    "height": 110
+  }
+}

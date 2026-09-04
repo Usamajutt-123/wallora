@@ -1,0 +1,27 @@
+# WALLORA — wallpaper drip every 6 hours (free GitHub Actions scheduler).
+# Vercel Hobby cron only allows once/day, so this workflow calls the deployed
+# route instead. Requires repo Secrets:
+#   WALLORA_SITE_URL   = https://your-app.vercel.app   (no trailing slash)
+#   WALLORA_CRON_SECRET= same value as the CRON_SECRET env on Vercel
+# Scheduled workflows only run on the DEFAULT branch and need at least one
+# commit every 60 days.
+
+name: wallora-daily-drip
+
+on:
+  schedule:
+    - cron: '0 0,6,12,18 * * *'   # 00:00 / 06:00 / 12:00 / 18:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  drip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger wallpaper drip
+        run: |
+          curl -sS -f --retry 2 --retry-delay 20 --max-time 240 \
+            -H "Authorization: Bearer ${{ secrets.WALLORA_CRON_SECRET }}" \
+            -H "User-Agent: github-actions-wallora" \
+            "${{ secrets.WALLORA_SITE_URL }}/api/cron/daily-drip" \
+            || echo "drip failed — will retry next 6-hour slot"

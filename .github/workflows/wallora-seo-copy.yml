@@ -1,0 +1,27 @@
+# WALLORA — AI SEO copy enrichment 4x a day (free GitHub Actions scheduler).
+# Requires repo Secrets:
+#   WALLORA_SITE_URL    = https://your-app.vercel.app   (no trailing slash)
+#   WALLORA_CRON_SECRET = same value as the CRON_SECRET env on Vercel
+# Each run writes unique AI SEO copy for up to WALLORA_SEO_PER_RUN wallpapers
+# (set that env var on Vercel; default 10). Runs are offset from the drip.
+# Scheduled workflows only run on the DEFAULT branch.
+
+name: wallora-seo-copy
+
+on:
+  schedule:
+    - cron: '30 1,7,13,19 * * *'   # 01:30 / 07:30 / 13:30 / 19:30 UTC
+  workflow_dispatch: {}
+
+jobs:
+  seo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger SEO copy enrichment
+        run: |
+          curl -sS -f --retry 2 --retry-delay 20 --max-time 240 \
+            -H "Authorization: Bearer ${{ secrets.WALLORA_CRON_SECRET }}" \
+            -H "User-Agent: github-actions-wallora" \
+            "${{ secrets.WALLORA_SITE_URL }}/api/cron/seo-copy" \
+            || echo "seo-copy failed — remaining walls wait for next run"
