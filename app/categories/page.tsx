@@ -26,7 +26,7 @@ export default async function CategoriesPage() {
           <a
             key={c.id}
             href={`/search?category=${encodeURIComponent(c.name)}`}
-            className={`card-shine group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.03] ${
+            className={`card-shine group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-zinc-900 ${
               i % 7 === 0 ? 'row-span-2 h-full min-h-[320px]' : 'h-44 sm:h-52'
             }`}
           >

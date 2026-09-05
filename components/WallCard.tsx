@@ -4,12 +4,22 @@ import { wallHref } from '@/lib/seo';
 import { sourceLabel } from '@/lib/labels';
 import { fmt } from '@/lib/utils';
 
-/** Pure presentational card — safe to render from both server and client components. */
+/**
+ * Pure presentational card — safe to render from both server and client components.
+ *
+ * The tile reserves its own height from the stored dimensions (falling back to a
+ * portrait 9/16 phone wallpaper) and paints a dark card background, so a
+ * lazy-loaded image arriving on a slow connection looks like a placeholder card
+ * instead of an empty black hole in the masonry grid.
+ */
+const FALLBACK_RATIO = 9 / 16;
+
 export default function WallCard({ w }: { w: Wallpaper }) {
+  const ratio = w.width > 0 && w.height > 0 ? w.width / w.height : FALLBACK_RATIO;
   return (
     <a
       href={wallHref(w)}
-      className="card-shine group relative block overflow-hidden rounded-2xl bg-white/[0.04] border border-white/[0.06]"
+      className="card-shine group relative block overflow-hidden rounded-2xl bg-zinc-900 border border-white/[0.06]"
     >
       <img
         src={imgUrl(w.thumb_url || w.image_url)}
@@ -18,7 +28,8 @@ export default function WallCard({ w }: { w: Wallpaper }) {
         decoding="async"
         width={w.width || 800}
         height={w.height || 1200}
-        className="w-full h-auto object-cover transition duration-700 ease-out group-hover:scale-[1.05]"
+        style={{ aspectRatio: String(ratio) }}
+        className="w-full h-auto bg-zinc-900 object-cover transition duration-700 ease-out group-hover:scale-[1.05]"
       />
 
       {/* premium badge */}
