@@ -5,6 +5,7 @@ import { filterCategories, filterWallpapers, isHardBlockedWallpaper } from './fi
 import { liveAnimePeek, liveCategories, liveRelated, liveSiteStats, liveWallpaperById, liveWallpapers } from './live';
 import type { Category, DashboardStats, Paged, SortMode, Wallpaper } from './types';
 import { seedOf } from './utils';
+import { unstable_cache } from 'next/cache';
 import { cache } from 'react';
 
 const PER_PAGE = 24;
@@ -362,15 +363,33 @@ async function getCategoriesRawUncached(): Promise<Category[]> {
 
 /* ── Server-side memoization for the category aggregation ────────────────────
    The raw catalog scan above is the heaviest read on public pages and the root
-   Navbar re-reads categories on every route, so the result is memoized twice:
-   • a short TTL keeps the aggregation reusable across requests;
-   • React cache() dedupes the concurrent reads within a single request.
+   Navbar re-reads categories on every route, so the result is memoized three
+   times:
+   • React cache() dedupes the concurrent reads within a single request;
+   • a short in-process TTL keeps the aggregation reusable across requests;
+   • unstable_cache (5 min) survives across serverless instances — with the
+     ISR revalidate on home/categories, the scan now runs at most once per
+     5 minutes instead of once per page generation.
    Admin-set custom covers are applied AFTER this layer on every request, so a
-   cover change still shows instantly. Auto covers/counts may trail new
-   wallpapers by at most CATS_MEMO_TTL_MS, matching the drip-feed cadence. */
+   cover change still shows within the same 5-minute window. */
 const CATS_MEMO_TTL_MS = 60_000;
 let catsMemoJson: string | null = null;
 let catsMemoAt = 0;
+
+/**
+ * Cross-instance data cache for the scan. An empty scan result is the error
+ * path of `getCategoriesRawUncached()` — throw instead of returning it so the
+ * failure is never cached for 5 minutes across instances.
+ */
+const _catsRawDataCache = unstable_cache(
+  async (): Promise<Category[]> => {
+    const cats = await getCategoriesRawUncached();
+    if (cats.length === 0) throw new Error('empty category scan — not caching');
+    return cats;
+  },
+  ['wallora-cats-raw-v1'],
+  { revalidate: 300 },
+);
 
 export async function getCategoriesRaw(): Promise<Category[]> {
   if (getMode() === 'supabase' && catsMemoJson) {
@@ -383,7 +402,16 @@ export async function getCategoriesRaw(): Promise<Category[]> {
       }
     }
   }
-  const fresh = await getCategoriesRawUncached();
+  let fresh: Category[];
+  if (getMode() === 'supabase') {
+    try {
+      fresh = await _catsRawDataCache();
+    } catch {
+      fresh = await getCategoriesRawUncached(); // transient failure — try live
+    }
+  } else {
+    fresh = await getCategoriesRawUncached();
+  }
   // Never memoize an empty result — it doubles as the "error path" of the
   // scan, and we don't want a transient failure pinning an empty shelf list.
   if (getMode() === 'supabase' && fresh.length > 0) {
@@ -524,17 +552,31 @@ export interface SiteStats {
   downloads: number;
 }
 
+/**
+ * Site counters trail live tracking POSTs by at most 5 minutes — accepted so
+ * the home/categories ISR pages can render from cache instead of hitting
+ * Supabase on every generation. (The tracking endpoints themselves always
+ * write real data; only the display numbers are stale-while-revalidate.)
+ */
+const _siteStatsCache = unstable_cache(
+  async (): Promise<SiteStats> => {
+    const { data, error } = await getAnonSupabase()!.from('site_stats').select('*').maybeSingle();
+    if (error) throw new Error(error.message);
+    return {
+      walls: Number(data?.walls ?? 0),
+      views: Number(data?.views ?? 0),
+      downloads: Number(data?.downloads ?? 0),
+    };
+  },
+  ['wallora-site-stats-v1'],
+  { revalidate: 300 },
+);
+
 export async function getSiteStats(): Promise<SiteStats> {
   const mode = getMode();
   try {
     if (mode === 'supabase') {
-      const { data, error } = await getAnonSupabase()!.from('site_stats').select('*').maybeSingle();
-      if (error) throw new Error(error.message);
-      return {
-        walls: Number(data?.walls ?? 0),
-        views: Number(data?.views ?? 0),
-        downloads: Number(data?.downloads ?? 0),
-      };
+      return await _siteStatsCache();
     } else if (mode === 'live') {
       return await liveSiteStats();
     }

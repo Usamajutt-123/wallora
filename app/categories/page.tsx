@@ -1,12 +1,22 @@
 import { getCategories } from '@/lib/db';
-import { imgUrl } from '@/lib/img';
+import { imgSrcSet } from '@/lib/img';
 import { fmt } from '@/lib/utils';
 import type { Metadata } from 'next';
 
-// Avoid consuming a live-source request during deployment builds. Runtime data
-// still uses the cached clients in lib/live.ts when Supabase is not connected.
-export const dynamic = 'force-dynamic';
+// ISR — category names/counts/covers barely change (the admin cover overlay is
+// applied at generation time, so custom covers appear within the revalidate
+// window). Edge-cached for 5 minutes: this page used to run the full catalog
+// scan on EVERY request, which is why TTFB was 0.4–1.9 s on 4G.
+export const revalidate = 300;
 export const metadata: Metadata = { title: 'Categories' };
+
+/** Grid tile width per breakpoint: 2 cols on phones, 3 on sm, 4 on lg. */
+const CATS_PAGE_SIZES =
+  '(min-width: 1024px) calc((100vw - 96px) / 4), ' +
+  '(min-width: 640px) calc((100vw - 80px) / 3), ' +
+  'calc((100vw - 48px) / 2)';
+
+const EAGER_COUNT = 8; // first two phone rows — everything above the fold
 
 export default async function CategoriesPage() {
   const categories = await getCategories();
@@ -22,7 +32,10 @@ export default async function CategoriesPage() {
       </p>
 
       <div className="mt-12 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-        {categories.map((c, i) => (
+        {categories.map((c, i) => {
+          const { src, srcSet, sizes } = imgSrcSet(c.cover_url, { sizes: CATS_PAGE_SIZES });
+          const eager = i < EAGER_COUNT;
+          return (
           <a
             key={c.id}
             href={`/search?category=${encodeURIComponent(c.name)}`}
@@ -32,9 +45,12 @@ export default async function CategoriesPage() {
           >
             {c.cover_url ? (
               <img
-                src={imgUrl(c.cover_url)}
+                src={src}
+                srcSet={srcSet}
+                sizes={sizes}
                 alt={c.name}
-                loading="lazy"
+                loading={eager ? 'eager' : 'lazy'}
+                fetchPriority={i < 4 ? 'high' : undefined}
                 decoding="async"
                 className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
               />
@@ -52,7 +68,8 @@ export default async function CategoriesPage() {
               </svg>
             </span>
           </a>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

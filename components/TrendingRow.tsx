@@ -1,12 +1,22 @@
 import type { Wallpaper } from '@/lib/types';
-import { imgUrl } from '@/lib/img';
+import { imgSrcSet } from '@/lib/img';
 import { wallHref } from '@/lib/seo';
 import { fmt } from '@/lib/utils';
+
+/** Fixed-width cards: w-44 (176 px) on phones, w-52 (208 px) on sm+. */
+const TRENDING_SIZES = '(min-width: 640px) 208px, 176px';
 
 export default function TrendingRow({ items }: { items: Wallpaper[] }) {
   return (
     <div className="flex gap-5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6">
-      {items.map((w, i) => (
+      {items.map((w, i) => {
+        // This strip sits BELOW the first viewport on a phone (measured y≈1227
+        // at 390px), so it stays lazy — it loads in the background as the user
+        // scrolls, and its srcset still caps the mobile render at 380 px.
+        // (React 19 auto-preloads every eager image, so lazy also keeps the
+        // page's preload count at the hero's ~5.)
+        const { src, srcSet, sizes } = imgSrcSet(w.thumb_url || w.image_url, { sizes: TRENDING_SIZES });
+        return (
         <a
           key={w.id}
           href={wallHref(w)}
@@ -14,7 +24,9 @@ export default function TrendingRow({ items }: { items: Wallpaper[] }) {
         >
           <div className="relative h-64 sm:h-72 overflow-hidden bg-zinc-900">
             <img
-              src={imgUrl(w.thumb_url || w.image_url)}
+              src={src}
+              srcSet={srcSet}
+              sizes={sizes}
               alt={w.title}
               loading="lazy"
               decoding="async"
@@ -37,7 +49,8 @@ export default function TrendingRow({ items }: { items: Wallpaper[] }) {
             <p className="text-[11px] text-white/40 mt-0.5">{w.category ?? 'Wallpaper'}</p>
           </div>
         </a>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -12,8 +12,14 @@ import AdSlot from '@/components/ads/AdSlot';
 import type { SortMode } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-export const revalidate = 60; // ISR — fresh every minute
+// ISR — the whole page (hero, trending, feed, stats) is edge-cached for 5
+// minutes. Stats may trail live tracking by up to 5 min: acceptable, the
+// tracking POSTs still hit real data. NOTE: do NOT read `searchParams` in this
+// page — that would silently flip the route back to per-request rendering and
+// kill the edge cache (it did exactly that at revalidate=60).
+export const revalidate = 300;
 
+/** Feed-sort pills point at the (deliberately dynamic) search page. */
 const SORTS: { id: SortMode; label: string }[] = [
   { id: 'newest', label: 'Newest' },
   { id: 'popular', label: 'Popular' },
@@ -38,24 +44,23 @@ function pickVibes(cats: Awaited<ReturnType<typeof getCategories>>, count = 12) 
   return picked;
 }
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<{ sort?: string }>;
-}) {
-  const query = await searchParams;
-  const sort = (SORTS.find((s) => s.id === query.sort)?.id ?? 'newest') as SortMode;
-
+export default async function Home() {
   const [latest, trending, featured, feed, categories, stats, ads] = await Promise.all([
     getHeroTiles(15), // hero mosaic — mixed categories, not just newest
     getTrending(10),
     getFeatured(6),
-    getWallpapers({ sort, perPage: 30 }),
+    getWallpapers({ perPage: 30 }), // "Fresh drops" = newest
     getCategories(),
     getSiteStats(),
     getAdsConfig(),
   ]);
 
+  // NOTE: the hero's eager <img fetchPriority="high"> tiles get their
+  // <link rel="preload" as="image" imageSrcSet=...> tags automatically (React
+  // 19 hoists preloads for eager images into <head>, before any JS runs).
+  // Keeping the page free of extra eager images is what keeps the preload
+  // budget at the ~5 first-viewport hero tiles — everything below the fold
+  // stays lazy and loads in the background while the user scrolls.
   return (
     <>
       <Hero tiles={latest} stats={stats} />
@@ -97,13 +102,13 @@ export default async function Home({
             <h2 className="font-display font-bold text-3xl sm:text-4xl tracking-tight">Fresh drops</h2>
           </div>
           <div className="flex gap-2">
-            {SORTS.map((s) => (
+            {SORTS.map((s, i) => (
               <a
                 key={s.id}
-                href={`/?sort=${s.id}#browse`}
+                href={`/search?sort=${s.id}`}
                 className={cn(
                   'rounded-full px-4 py-2 text-sm transition border',
-                  sort === s.id
+                  i === 0
                     ? 'bg-accent text-black border-accent font-semibold'
                     : 'glass text-white/60 hover:text-white hover:border-white/25',
                 )}
@@ -121,7 +126,7 @@ export default async function Home({
             <AdSlot id="feed-inline" config={ads['feed-inline']} />
           </div>
         )}
-        <LoadMore initialPage={feed.page} lastPage={feed.lastPage} initialCount={feed.data.length} sort={sort} ad={ads['feed-inline']} />
+        <LoadMore initialPage={feed.page} lastPage={feed.lastPage} initialCount={feed.data.length} ad={ads['feed-inline']} />
       </section>
 
       {/* CTA */}

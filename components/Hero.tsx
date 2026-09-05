@@ -1,9 +1,16 @@
 import type { Wallpaper } from '@/lib/types';
-import { imgUrl } from '@/lib/img';
+import { imgSrcSet } from '@/lib/img';
 import { fmt } from '@/lib/utils';
 import type { SiteStats } from '@/lib/db';
 
 const COLS = 5;
+
+/**
+ * The mosaic is a 3-col strip on phones (5 on sm+) — tiles render ~1/3 (or
+ * 1/5) of the viewport wide, so phones resolve to the 380 px candidate of the
+ * site-wide srcset ladder instead of a 900 px render.
+ */
+const HERO_SIZES = '(min-width: 640px) 20vw, 33vw';
 
 export default function Hero({ tiles, stats }: { tiles: Wallpaper[]; stats: SiteStats }) {
   // distribute tiles into vertical columns
@@ -30,16 +37,28 @@ export default function Hero({ tiles, stats }: { tiles: Wallpaper[]; stats: Site
                 animationDirection: i % 2 ? 'reverse' : 'normal',
               }}
             >
-              {[...col, ...col, ...col, ...col].map((t, j) => (
-                <img
-                  key={`${t.id}-${j}`}
-                  src={imgUrl(t.thumb_url)}
-                  alt=""
-                  loading={i === 2 && j < 2 ? 'eager' : 'lazy'}
-                  decoding="async"
-                  className="w-full rounded-2xl bg-zinc-900 object-cover aspect-[3/4] brightness-[0.85]"
-                />
-              ))}
+              {[...col, ...col, ...col, ...col].map((t, j) => {
+                const { src, srcSet, sizes } = imgSrcSet(t.thumb_url, { sizes: HERO_SIZES });
+                // Row 1 of the mosaic = j===0 of every column (the duplicated
+                // copies further down the marquee are cache hits, not bytes).
+                // The three left-most columns are the above-the-fold tiles on a
+                // phone — they get high fetch priority (and are preloaded in
+                // <head> by the page). Everything else stays lazy.
+                const eager = j === 0;
+                return (
+                  <img
+                    key={`${t.id}-${j}`}
+                    src={src}
+                    srcSet={srcSet}
+                    sizes={sizes}
+                    alt=""
+                    loading={eager ? 'eager' : 'lazy'}
+                    fetchPriority={i < 3 && eager ? 'high' : undefined}
+                    decoding="async"
+                    className="w-full rounded-2xl bg-zinc-900 object-cover aspect-[3/4] brightness-[0.85]"
+                  />
+                );
+              })}
             </div>
           </div>
         ))}
