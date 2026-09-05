@@ -10,9 +10,9 @@ export default function TrendingRow({ items }: { items: Wallpaper[] }) {
         <a
           key={w.id}
           href={wallHref(w)}
-          className="card-shine group relative shrink-0 w-44 sm:w-52 snap-start overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.04]"
+          className="card-shine group relative shrink-0 w-44 sm:w-52 snap-start overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900"
         >
-          <div className="relative h-64 sm:h-72 overflow-hidden">
+          <div className="relative h-64 sm:h-72 overflow-hidden bg-zinc-900">
             <img
               src={imgUrl(w.thumb_url || w.image_url)}
               alt={w.title}

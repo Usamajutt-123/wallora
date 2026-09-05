@@ -19,7 +19,7 @@ export default function BentoFeatured({ items }: { items: Wallpaper[] }) {
         <a
           key={w.id}
           href={wallHref(w)}
-          className={`card-shine group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.04] row-span-1 ${SPANS[i % SPANS.length]}`}
+          className={`card-shine group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900 row-span-1 ${SPANS[i % SPANS.length]}`}
         >
           <img
             src={imgUrl(w.thumb_url || w.image_url)}

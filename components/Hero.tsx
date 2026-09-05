@@ -37,7 +37,7 @@ export default function Hero({ tiles, stats }: { tiles: Wallpaper[]; stats: Site
                   alt=""
                   loading={i === 2 && j < 2 ? 'eager' : 'lazy'}
                   decoding="async"
-                  className="w-full rounded-2xl object-cover aspect-[3/4] brightness-[0.85]"
+                  className="w-full rounded-2xl bg-zinc-900 object-cover aspect-[3/4] brightness-[0.85]"
                 />
               ))}
             </div>

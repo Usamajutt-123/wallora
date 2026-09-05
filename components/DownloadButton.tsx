@@ -15,7 +15,9 @@ export default function DownloadButton({ id, imageUrl, title }: { id: string; im
       body: JSON.stringify({ id, type: 'download' }),
     }).catch(() => {});
 
-    const src = imgUrl(imageUrl); // known CDNs use the same-origin cache; manual HTTPS hosts remain direct
+    // `full: 1` asks the proxy for the ORIGINAL bytes — the on-page previews are
+    // resized WebP, but a saved file must keep its full source quality.
+    const src = imgUrl(imageUrl, { full: true }); // known CDNs use the same-origin cache; manual HTTPS hosts remain direct
     if (!src) {
       setState('idle');
       return;

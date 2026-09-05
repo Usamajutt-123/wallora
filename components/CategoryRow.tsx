@@ -10,7 +10,7 @@ export default function CategoryRow({ categories }: { categories: Category[] }) 
         <a
           key={c.id}
           href={`/search?category=${encodeURIComponent(c.name)}`}
-          className="card-shine group relative shrink-0 w-40 h-52 snap-start overflow-hidden rounded-2xl border border-white/[0.07]"
+          className="card-shine group relative shrink-0 w-40 h-52 snap-start overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900"
         >
           {c.cover_url ? (
             <img

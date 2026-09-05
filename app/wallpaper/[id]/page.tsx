@@ -59,7 +59,12 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
   const seo = seoFor(w);
   const [related, ads, guide] = await Promise.all([getRelated(w, 8), getAdsConfig(), getGuidePost(w.category)]);
   const thumb = imgUrl(w.thumb_url);
-  const original = imgUrl(w.image_url);
+  // Structured data advertises the TRUE original file (Google indexes it), so it
+  // asks the proxy not to resize.
+  const original = imgUrl(w.image_url, { full: true });
+  // The on-page preview and its blurred backdrop share ONE URL, so the browser
+  // downloads a single 1440 px render instead of two different sizes.
+  const preview = imgUrl(w.image_url, { w: 1440 });
   const absolute = (url: string) => (url.startsWith('/') ? siteUrl(url) : url);
   const jsonLd = imageJsonLd(
     w,
@@ -102,7 +107,7 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
         {/* ---- preview with ambient glow ---- */}
         <div className="relative">
           <img
-            src={imgUrl(w.image_url)}
+            src={preview}
             alt=""
             aria-hidden
             loading="lazy"
@@ -110,8 +115,10 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
             className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-30 scale-110 rounded-3xl -z-10"
           />
           <div className="glass rounded-3xl p-2.5">
+            {/* Main preview is the one place a visitor looks at the image large,
+                so it asks the proxy for a wider 1440 px render. */}
             <img
-              src={imgUrl(w.image_url)}
+              src={preview}
               alt={seo.alt}
               className="w-full max-h-[78vh] object-contain rounded-2xl bg-black"
             />
