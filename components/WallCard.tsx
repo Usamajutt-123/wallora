@@ -1,8 +1,19 @@
 import type { Wallpaper } from '@/lib/types';
-import { imgUrl } from '@/lib/img';
+import { imgSrcSet } from '@/lib/img';
 import { wallHref } from '@/lib/seo';
 import { sourceLabel } from '@/lib/labels';
 import { fmt } from '@/lib/utils';
+
+/**
+ * Masonry tile width per breakpoint (container max-w-7xl, 12 px column gap):
+ * 2 cols on phones, 3 on sm, 4 on lg, 5 on 2xl. A 390 px phone resolves the
+ * 380 px srcset candidate instead of the old blanket 900 px render.
+ */
+const MASONRY_SIZES =
+  '(min-width: 1536px) calc((100vw - 108px) / 5), ' +
+  '(min-width: 1024px) calc((100vw - 132px) / 4), ' +
+  '(min-width: 640px) calc((100vw - 72px) / 3), ' +
+  'calc((100vw - 44px) / 2)';
 
 /**
  * Pure presentational card — safe to render from both server and client components.
@@ -16,13 +27,16 @@ const FALLBACK_RATIO = 9 / 16;
 
 export default function WallCard({ w }: { w: Wallpaper }) {
   const ratio = w.width > 0 && w.height > 0 ? w.width / w.height : FALLBACK_RATIO;
+  const { src, srcSet, sizes } = imgSrcSet(w.thumb_url || w.image_url, { sizes: MASONRY_SIZES });
   return (
     <a
       href={wallHref(w)}
       className="card-shine group relative block overflow-hidden rounded-2xl bg-zinc-900 border border-white/[0.06]"
     >
       <img
-        src={imgUrl(w.thumb_url || w.image_url)}
+        src={src}
+        srcSet={srcSet}
+        sizes={sizes}
         alt={w.title}
         loading="lazy"
         decoding="async"

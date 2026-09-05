@@ -1,5 +1,5 @@
 import type { Wallpaper } from '@/lib/types';
-import { imgUrl } from '@/lib/img';
+import { imgSrcSet } from '@/lib/img';
 import { wallHref } from '@/lib/seo';
 
 const SPANS = [
@@ -11,18 +11,27 @@ const SPANS = [
   'md:col-span-2',
 ];
 
+/** 2-col grid on phones/tablets, 4-col from md — matches the auto-rows tiles. */
+const BENTO_SIZES = '(min-width: 768px) 25vw, (min-width: 640px) 45vw, 48vw';
+
 export default function BentoFeatured({ items }: { items: Wallpaper[] }) {
   const list = items.slice(0, 6);
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 auto-rows-[150px] sm:auto-rows-[175px] gap-3.5">
-      {list.map((w, i) => (
+      {list.map((w, i) => {
+        // Below the first viewport on a phone (measured y≈1740 at 390px):
+        // lazy + srcset (see TrendingRow for why).
+        const { src, srcSet, sizes } = imgSrcSet(w.thumb_url || w.image_url, { sizes: BENTO_SIZES });
+        return (
         <a
           key={w.id}
           href={wallHref(w)}
           className={`card-shine group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900 row-span-1 ${SPANS[i % SPANS.length]}`}
         >
           <img
-            src={imgUrl(w.thumb_url || w.image_url)}
+            src={src}
+            srcSet={srcSet}
+            sizes={sizes}
             alt={w.title}
             loading="lazy"
             decoding="async"
@@ -50,7 +59,8 @@ export default function BentoFeatured({ items }: { items: Wallpaper[] }) {
             </span>
           )}
         </a>
-      ))}
+        );
+      })}
     </div>
   );
 }

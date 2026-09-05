@@ -43,8 +43,11 @@ const PROXY_HOSTS = [
  *      to PROXIED. Bumped because success responses are now edge-cached for
  *      30 days (s-maxage), so a transform change must not be masked by an
  *      older cached copy.
+ * v4 — pages emit responsive `srcset` candidates (380/760/1440), so the URL
+ *      shape a browser can request changed; every tile now gets the width its
+ *      render box actually needs instead of a blanket 900 px.
  */
-export const IMG_PROXY_VERSION = 3;
+export const IMG_PROXY_VERSION = 4;
 
 /** Width (CSS px) the proxy resizes to when a caller does not ask for one. */
 export const IMG_DEFAULT_WIDTH = 900;
@@ -76,22 +79,32 @@ function proxySafe(host: string): boolean {
   return PROXY_HOSTS.some((domain) => matches(host, domain));
 }
 
-/**
- * Hosts that should always load directly in the browser.
- *
- * Wallhaven used to live here (it hotlinks fine), but its `path` is the full
- * multi-MB original and `thumbs.large` is 1920 px — both far heavier than the
- * box they render into. It now goes through /api/img like every other source.
- */
-function directSafe(host: string): boolean {
-  return matches(host, 'unsplash.com');
-}
-
 /** Clamp a requested width into the range the proxy accepts. */
 function clampWidth(w: number): number {
   const n = Math.round(w);
   if (!Number.isFinite(n)) return IMG_DEFAULT_WIDTH;
   return Math.min(IMG_MAX_WIDTH, Math.max(IMG_MIN_WIDTH, n));
+}
+
+type ImgTarget =
+  | { kind: 'none' }
+  | { kind: 'direct'; url: string }
+  | { kind: 'proxy'; url: URL };
+
+/** Classify a stored URL the same way every imgUrl() call has always done. */
+function resolveTarget(u: string | null | undefined): ImgTarget {
+  if (!u) return { kind: 'none' };
+  if (u.startsWith('//')) return { kind: 'none' };
+  if (u.startsWith('/')) return { kind: 'direct', url: u };
+  try {
+    const url = new URL(u);
+    if (url.protocol !== 'https:' || url.username || url.password) return { kind: 'none' };
+    const host = url.hostname.toLowerCase();
+    if (proxySafe(host)) return { kind: 'proxy', url };
+    return { kind: 'direct', url: url.toString() };
+  } catch {
+    return { kind: 'none' };
+  }
 }
 
 /**
@@ -111,16 +124,69 @@ function proxyUrl(target: URL, opts?: ImgUrlOptions): string {
 }
 
 export function imgUrl(u: string | null | undefined, opts?: ImgUrlOptions): string {
-  if (!u) return '';
-  if (u.startsWith('//')) return '';
-  if (u.startsWith('/')) return u;
-  try {
-    const url = new URL(u);
-    if (url.protocol !== 'https:' || url.username || url.password) return '';
-    const host = url.hostname.toLowerCase();
-    if (directSafe(host)) return url.toString();
-    return proxySafe(host) ? proxyUrl(url, opts) : url.toString();
-  } catch {
-    return '';
-  }
+  const target = resolveTarget(u);
+  if (target.kind === 'none') return '';
+  if (target.kind === 'direct') return target.url;
+  return proxyUrl(target.url, opts);
+}
+
+export interface ImgSrcSetOptions {
+  /**
+   * Candidate render widths in CSS px, ascending. Defaults to the site-wide
+   * ladder [380, 760, 1440] — phone tile, tablet/desktop tile, detail page.
+   */
+  widths?: number[];
+  /**
+   * CSS `sizes` expression: how wide the render box is at each viewport. The
+   * browser multiplies it by device-pixel-ratio and picks the closest
+   * candidate, so it MUST match the actual layout (see each call site).
+   */
+  sizes?: string;
+}
+
+export interface ImgSrcSet {
+  /** Fallback src — the LARGEST candidate, for clients without srcset support. */
+  src: string;
+  /** `url 380w, url 760w, url 1440w` — undefined for direct (unproxied) hosts. */
+  srcSet?: string;
+  /** Pass-through of `options.sizes`; only meaningful together with srcSet. */
+  sizes?: string;
+  /** Exact candidate URLs, ascending width — for <link rel="preload"> of the mobile size. */
+  candidates?: string[];
+}
+
+export const IMG_SRCSET_WIDTHS = [380, 760, 1440];
+
+/**
+ * Responsive URL set for one wallpaper image.
+ *
+ * Proxied hosts get a srcset ladder (each entry is a distinct /api/img render,
+ * so a 390 px phone downloads the 380 px WebP instead of the 900 px one).
+ * Direct hosts (already-sized Unsplash CDN URLs) are returned as-is: the proxy
+ * cannot re-render them, and they are cheap by definition.
+ */
+export function imgSrcSet(u: string | null | undefined, opts: ImgSrcSetOptions = {}): ImgSrcSet {
+  const target = resolveTarget(u);
+  if (target.kind === 'none') return { src: '' };
+  if (target.kind === 'direct') return { src: target.url, sizes: opts.sizes };
+
+  const widths = (opts.widths ?? IMG_SRCSET_WIDTHS).map(clampWidth);
+  const candidates = widths.map((w) => proxyUrl(target.url, { w }));
+  return {
+    src: candidates[candidates.length - 1],
+    srcSet: candidates.map((c, i) => `${c} ${widths[i]}w`).join(', '),
+    sizes: opts.sizes,
+    candidates,
+  };
+}
+
+/**
+ * The exact proxied candidate URL at one width — for `<link rel="preload">`
+ * tags that must byte-for-byte match a srcset entry. '' when not proxied
+ * (nothing to preload; direct hosts are not served by the proxy).
+ */
+export function imgCandidate(u: string | null | undefined, w: number): string {
+  const target = resolveTarget(u);
+  if (target.kind !== 'proxy') return '';
+  return proxyUrl(target.url, { w });
 }

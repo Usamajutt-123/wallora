@@ -2,7 +2,9 @@ import { listPosts } from '@/lib/blog';
 import { imgUrl } from '@/lib/img';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-dynamic';
+// ISR — blog index changes at most a few times a day; 1 hour of staleness is
+// invisible and turns this from a per-request render into a cached one.
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: 'Wallpaper Blog — Guides, Trends & 4K Collections',

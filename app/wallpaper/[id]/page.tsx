@@ -2,7 +2,7 @@ import { getRelated, getWallpaperById } from '@/lib/db';
 import { getGuidePost } from '@/lib/blog';
 import { getAdsConfig } from '@/lib/ads';
 import AdSlot from '@/components/ads/AdSlot';
-import { imgUrl } from '@/lib/img';
+import { imgUrl, imgSrcSet } from '@/lib/img';
 import { imageJsonLd, parseWallParam, seoFor, siteUrl, wallHref, wallSlug } from '@/lib/seo';
 import { sourceLabel } from '@/lib/labels';
 import { fmt, jsonLdString } from '@/lib/utils';
@@ -62,9 +62,10 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
   // Structured data advertises the TRUE original file (Google indexes it), so it
   // asks the proxy not to resize.
   const original = imgUrl(w.image_url, { full: true });
-  // The on-page preview and its blurred backdrop share ONE URL, so the browser
-  // downloads a single 1440 px render instead of two different sizes.
-  const preview = imgUrl(w.image_url, { w: 1440 });
+  // The on-page preview and its blurred backdrop share ONE srcset, so the
+  // browser downloads a single render (1080 px on phones, 1440 px on
+  // desktops) instead of two different sizes.
+  const preview = imgSrcSet(w.image_url, { widths: [1080, 1440], sizes: '80vw' });
   const absolute = (url: string) => (url.startsWith('/') ? siteUrl(url) : url);
   const jsonLd = imageJsonLd(
     w,
@@ -107,7 +108,9 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
         {/* ---- preview with ambient glow ---- */}
         <div className="relative">
           <img
-            src={preview}
+            src={preview.src}
+            srcSet={preview.srcSet}
+            sizes={preview.sizes}
             alt=""
             aria-hidden
             loading="lazy"
@@ -116,9 +119,11 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
           />
           <div className="glass rounded-3xl p-2.5">
             {/* Main preview is the one place a visitor looks at the image large,
-                so it asks the proxy for a wider 1440 px render. */}
+                so it asks the proxy for a wider 1440 px render (1080 on phones). */}
             <img
-              src={preview}
+              src={preview.src}
+              srcSet={preview.srcSet}
+              sizes={preview.sizes}
               alt={seo.alt}
               className="w-full max-h-[78vh] object-contain rounded-2xl bg-black"
             />

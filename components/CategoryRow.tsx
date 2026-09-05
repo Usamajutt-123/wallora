@@ -1,12 +1,17 @@
 import type { Category } from '@/lib/types';
-import { imgUrl } from '@/lib/img';
+import { imgSrcSet } from '@/lib/img';
 import { shelfBySlug } from '@/lib/wallhaven';
 import { fmt } from '@/lib/utils';
+
+/** Fixed-width cards (w-40 = 160 px) on every viewport. */
+const CATEGORY_SIZES = '160px';
 
 export default function CategoryRow({ categories }: { categories: Category[] }) {
   return (
     <div className="flex gap-4 overflow-x-auto no-scrollbar snap-x pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6">
-      {categories.map((c) => (
+      {categories.map((c) => {
+        const { src, srcSet, sizes } = imgSrcSet(c.cover_url, { sizes: CATEGORY_SIZES });
+        return (
         <a
           key={c.id}
           href={`/search?category=${encodeURIComponent(c.name)}`}
@@ -14,7 +19,9 @@ export default function CategoryRow({ categories }: { categories: Category[] }) 
         >
           {c.cover_url ? (
             <img
-              src={imgUrl(c.cover_url)}
+              src={src}
+              srcSet={srcSet}
+              sizes={sizes}
               alt={c.name}
               loading="lazy"
               decoding="async"
@@ -37,7 +44,8 @@ export default function CategoryRow({ categories }: { categories: Category[] }) 
             </svg>
           </span>
         </a>
-      ))}
+        );
+      })}
     </div>
   );
 }
