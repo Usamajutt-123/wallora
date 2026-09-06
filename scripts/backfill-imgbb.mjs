@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* One-time backfill: mirror all unmirrored stored wallpapers of given sources
-   to ImgBB and store the returned URL in mirror_url. Run from the project dir:
+   to Cloudinary (or legacy ImgBB when Cloudinary is not configured) and store
+   the returned URL in mirror_url. Run from the project dir:
      node scripts/backfill-imgbb.mjs nexwall wallhaven
    Best-effort per image; failures are counted, never fatal. */
 import dotenv from 'dotenv';
@@ -9,12 +10,17 @@ dotenv.config({ quiet: true });
 if (typeof globalThis.WebSocket === 'undefined') globalThis.WebSocket = class {};
 
 import { createClient } from '@supabase/supabase-js';
+import { mirrorBackend, uploadMirror } from './mirror-upload.mjs';
 
 const sources = process.argv.slice(2);
 if (!sources.length) { console.error('pass sources, e.g. nexwall wallhaven'); process.exit(1); }
 
-const apiKey = (process.env.IMGBB_API_KEY || '').trim();
-if (!apiKey) { console.error('IMGBB_API_KEY missing'); process.exit(1); }
+const backend = mirrorBackend();
+if (!backend) {
+  console.error('Cloudinary credentials or IMGBB_API_KEY missing');
+  process.exit(1);
+}
+console.log(`mirror backend: ${backend}`);
 
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
@@ -45,23 +51,10 @@ async function download(url) {
     const type = (res.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase();
     if (!['image/jpeg','image/png','image/webp','image/avif','image/gif'].includes(type)) throw new Error('type ' + type);
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > 28 * 1024 * 1024) throw new Error('too-large');
-    return buf;
+    if (buf.length > 40 * 1024 * 1024) throw new Error('too-large');
+    return { buffer: buf, type };
   }
   throw new Error('too-many-redirects');
-}
-
-async function upload(buf, name) {
-  const form = new FormData();
-  form.append('image', buf.toString('base64'));
-  form.append('name', name.slice(0, 60));
-  const res = await fetch('https://api.imgbb.com/1/upload?key=' + encodeURIComponent(apiKey), { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
-  const json = await res.json().catch(() => null);
-  if (!res.ok || !json?.data?.url) {
-    const c = json?.status_code ?? res.status;
-    throw new Error(c === 103 ? 'imgbb-103-forbidden' : 'imgbb-' + c);
-  }
-  return json.data.url;
 }
 
 for (const source of sources) {
@@ -82,9 +75,15 @@ for (const source of sources) {
       const label = `${source}:${w.source_id}`;
       if (!url) { fail++; fails.push(`${label}:no-trusted-url`); continue; }
       try {
-        const buf = await download(url);
-        const mirror = await upload(buf, `wallora-${source}-${w.source_id}`);
-        const { error: up } = await sb.from('wallpapers').update({ mirror_url: mirror }).eq('source', source).eq('source_id', w.source_id);
+        const { buffer, type } = await download(url);
+        const uploaded = await uploadMirror({
+          buffer,
+          contentType: type,
+          source,
+          sourceId: String(w.source_id),
+          name: `wallora-${source}-${w.source_id}`,
+        });
+        const { error: up } = await sb.from('wallpapers').update({ mirror_url: uploaded.url }).eq('source', source).eq('source_id', w.source_id);
         if (up) throw new Error('db:' + up.message.slice(0, 80));
         ok++;
       } catch (e) {

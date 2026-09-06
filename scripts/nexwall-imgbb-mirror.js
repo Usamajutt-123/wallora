@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * WALLORA MIRROR — existing Supabase NexWall rows → independent ImgBB copies.
+ * WALLORA MIRROR — existing Supabase NexWall rows → permanent copies.
  *
  * This does NOT call the NexWall API. It reads already-saved image URLs from
- * Supabase, downloads those CDN files, uploads them to ImgBB, then fills the
- * same wallpaper row's mirror_url. Run only from a home PC/internet connection.
+ * Supabase, downloads those CDN files, uploads them to Cloudinary when
+ * configured (legacy ImgBB only when it is not), then fills the same wallpaper
+ * row's mirror_url. Run only from a home PC/internet connection.
  *
  * Usage:
  *   node scripts/nexwall-imgbb-mirror.js --limit 20
@@ -13,18 +14,18 @@
  */
 
 import { config } from 'dotenv';
+import { mirrorBackend, uploadMirror } from './mirror-upload.mjs';
 config({ path: '.env.local', quiet: true });
 config({ quiet: true });
 
 const SB_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const IMGBB_KEY = process.env.IMGBB_API_KEY || '';
 const rawLimit = Number(process.argv[process.argv.indexOf('--limit') + 1]) || 50;
 const LIMIT = Math.min(100, Math.max(1, Math.floor(rawLimit)));
 const DRY = process.argv.includes('--dry');
 const TEST = process.argv.includes('--selftest');
 const PACE_MS = 2500;
-const MAX_BYTES = 30 * 1024 * 1024;
+const MAX_BYTES = 40 * 1024 * 1024;
 const SOURCE_DOMAINS = ['kodnextech.com', 'nexwall.app', 'nexwallcdn.com', 'cloudinary.com'];
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']);
 const STRONG_BLOCK = /\b(cosplay|selfie|photoshoot|actress|celebrity|supermodel|bridal|bikini|lingerie|swimsuit|sexy|sensual|erotic|nsfw|ecchi|hentai|nude|glamour photography|portrait photography|fashion photography|beauty photography)\b/i;
@@ -84,28 +85,6 @@ async function sbFetch(path, options = {}) {
   return response;
 }
 
-async function uploadToImgBB(buffer, name) {
-  const form = new FormData();
-  form.append('image', buffer.toString('base64'));
-  form.append('name', name);
-  const response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(IMGBB_KEY)}`, {
-    method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`ImgBB HTTP ${response.status}: ${body.slice(0, 180)}`);
-  }
-  const json = await response.json();
-  if (!json?.success || !json?.data?.url) throw new Error('ImgBB returned no direct image URL.');
-  const url = new URL(json.data.url);
-  if (url.protocol !== 'https:' || !(url.hostname === 'i.ibb.co' || url.hostname.endsWith('.i.ibb.co'))) {
-    throw new Error('ImgBB returned an unexpected image host.');
-  }
-  return url.toString();
-}
-
 async function readImageLimited(response) {
   if (!response.body) throw new Error('source returned an empty body');
   const chunks = [];
@@ -135,20 +114,27 @@ async function mirrorOne(wallpaper) {
   const buffer = await readImageLimited(response);
   if (!buffer.length) throw new Error('source returned an empty image');
 
-  const url = await uploadToImgBB(buffer, `wallora-nx-${wallpaper.source_id}`);
+  const uploaded = await uploadMirror({
+    buffer,
+    contentType: type,
+    source: 'nexwall',
+    sourceId: String(wallpaper.source_id),
+    name: `wallora-nx-${wallpaper.source_id}`,
+  });
   const saved = await sbFetch(`wallpapers?id=eq.${encodeURIComponent(wallpaper.id)}&select=id`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ mirror_url: url }),
+    body: JSON.stringify({ mirror_url: uploaded.url }),
   });
   const updated = await saved.json();
   if (!Array.isArray(updated) || updated.length !== 1) throw new Error('wallpaper row disappeared before mirror save');
-  return { url, size: `${(buffer.length / 1e6).toFixed(1)}MB` };
+  return { url: uploaded.url, size: `${(buffer.length / 1e6).toFixed(1)}MB` };
 }
 
 async function main() {
-  if (TEST && DRY) throw new Error('--selftest performs a real ImgBB upload and cannot be combined with --dry.');
-  if (!IMGBB_KEY && (!DRY || TEST)) throw new Error('IMGBB_API_KEY missing in .env.local.');
+  const backend = mirrorBackend();
+  if (TEST && DRY) throw new Error('--selftest performs a real mirror upload and cannot be combined with --dry.');
+  if (!backend && (!DRY || TEST)) throw new Error('Cloudinary credentials or IMGBB_API_KEY missing in .env.local.');
 
   // Self-test intentionally needs no Supabase credentials, but does upload once.
   if (TEST) {
@@ -156,8 +142,14 @@ async function main() {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       'base64',
     );
-    const url = await uploadToImgBB(tiny, 'wallora-selftest');
-    log(`✅ ImgBB self-test passed on this PC\n   ${url}`);
+    const uploaded = await uploadMirror({
+      buffer: tiny,
+      contentType: 'image/png',
+      source: 'nexwall',
+      sourceId: 'selftest',
+      name: 'wallora-selftest',
+    });
+    log(`✅ ${backend} self-test passed on this PC\n   ${uploaded.url}`);
     return;
   }
 

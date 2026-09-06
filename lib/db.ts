@@ -41,7 +41,7 @@ function rowToWallpaper(r: any): Wallpaper {
     source_id: r.source_id,
     title: r.title ?? 'Untitled',
     category: r.category ?? null,
-    // prefer our ImgBB mirror when it exists — survives any source outage
+    // prefer our permanent image mirror when it exists — survives source outages
     image_url: r.mirror_url || r.image_url,
     // Prefer the mirror for cards too; otherwise a dead source thumbnail can
     // make a successfully mirrored wallpaper disappear from discovery feeds.

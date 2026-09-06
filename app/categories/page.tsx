@@ -16,7 +16,10 @@ const CATS_PAGE_SIZES =
   '(min-width: 640px) calc((100vw - 80px) / 3), ' +
   'calc((100vw - 48px) / 2)';
 
-const EAGER_COUNT = 8; // first two phone rows — everything above the fold
+// React 19 emits a preload for each eager image. Keep only the first three
+// mobile above-the-fold covers in that preload budget; all later cards must be
+// lazy so their bytes do not compete with the LCP request.
+const EAGER_COUNT = 3;
 
 export default async function CategoriesPage() {
   const categories = await getCategories();
@@ -33,8 +36,11 @@ export default async function CategoriesPage() {
 
       <div className="mt-12 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {categories.map((c, i) => {
-          const { src, srcSet, sizes } = imgSrcSet(c.cover_url, { sizes: CATS_PAGE_SIZES });
+          const { src, srcSet, sizes, candidates } = imgSrcSet(c.cover_url, { sizes: CATS_PAGE_SIZES });
           const eager = i < EAGER_COUNT;
+          // If React/Next falls back to a preload href, use the same 380w
+          // candidate the 390px layout selects, rather than the 1440w src.
+          const mobileSrc = candidates?.[0] || src;
           return (
           <a
             key={c.id}
@@ -45,12 +51,12 @@ export default async function CategoriesPage() {
           >
             {c.cover_url ? (
               <img
-                src={src}
+                src={eager ? mobileSrc : src}
                 srcSet={srcSet}
                 sizes={sizes}
                 alt={c.name}
                 loading={eager ? 'eager' : 'lazy'}
-                fetchPriority={i < 4 ? 'high' : undefined}
+                fetchPriority={eager ? 'high' : undefined}
                 decoding="async"
                 className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
               />

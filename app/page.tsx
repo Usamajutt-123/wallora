@@ -59,7 +59,7 @@ export default async function Home() {
   // <link rel="preload" as="image" imageSrcSet=...> tags automatically (React
   // 19 hoists preloads for eager images into <head>, before any JS runs).
   // Keeping the page free of extra eager images is what keeps the preload
-  // budget at the ~5 first-viewport hero tiles — everything below the fold
+  // budget at the ~3 first-viewport hero tiles — everything below the fold
   // stays lazy and loads in the background while the user scrolls.
   return (
     <>
