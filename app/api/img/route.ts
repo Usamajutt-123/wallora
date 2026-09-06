@@ -354,7 +354,11 @@ export async function GET(req: NextRequest) {
   // files are full quality rather than a resized WebP preview. (Declared
   // above so the Cloudinary transform strip can branch on it before fetch.)
 
-  if (wantOriginal || host === PRE_OPTIMISED_HOST || contentType === ANIMATED_TYPE) {
+  // No host-based passthrough: Cloudinary display URLs (path form
+  // res.cloudinary.com/<cloud>/... AND subdomain form res.<cloud>.cloudinary.com)
+  // carry a c_limit,w_900 transform that serves 810-900px files; those must
+  // still be resized to the requested width or small tiles download ~3x bytes.
+  if (wantOriginal || contentType === ANIMATED_TYPE) {
     return imageResponse(source, contentType, host);
   }
 

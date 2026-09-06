@@ -54,8 +54,11 @@ const PROXY_HOSTS = [
  *      proxied image is resized to the requested width (withoutEnlargement)
  *      and re-encoded as WebP, so Cloudinary's 810–900px pre-optimised JPEGs
  *      are no longer served as-is to small grid tiles.
+ * v7 — removed the res.cloudinary.com passthrough branch: path-form Cloudinary
+ *      URLs (hostname exactly res.cloudinary.com) were served unresized; all
+ *      proxied images are now resized to the requested width.
  */
-export const IMG_PROXY_VERSION = 6;
+export const IMG_PROXY_VERSION = 7;
 
 /** Width (CSS px) the proxy resizes to when a caller does not ask for one. */
 export const IMG_DEFAULT_WIDTH = 900;
