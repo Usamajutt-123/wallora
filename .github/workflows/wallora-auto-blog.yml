@@ -19,8 +19,8 @@ jobs:
     steps:
       - name: Trigger AI blog draft
         run: |
+          set -e
           curl -sS -f --retry 2 --retry-delay 20 --max-time 240 \
             -H "Authorization: Bearer ${{ secrets.WALLORA_CRON_SECRET }}" \
             -H "User-Agent: github-actions-wallora" \
-            "${{ secrets.WALLORA_SITE_URL }}/api/cron/auto-blog" \
-            || echo "auto-blog failed — will try again next scheduled day"
+            "${{ secrets.WALLORA_SITE_URL }}/api/cron/auto-blog"
