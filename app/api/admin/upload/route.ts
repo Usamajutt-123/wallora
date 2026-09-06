@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { adminApiOk, ADMIN_COOKIE } from '@/lib/auth';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
@@ -29,14 +30,12 @@ function jpegSize(buf: Buffer): [number, number] | null {
       continue;
     }
     const marker = buf[offset + 1];
-    // standalone markers have no length
     if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
       offset += 2;
       continue;
     }
     const length = buf.readUInt16BE(offset + 2);
     if (length < 2) return null;
-    // SOF markers (baseline + progressive) carry dimensions
     if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
       const height = buf.readUInt16BE(offset + 5);
       const width = buf.readUInt16BE(offset + 7);
@@ -71,10 +70,104 @@ function dimensionsOf(type: string, buf: Buffer): { width: number | null; height
   else if (type === 'image/gif') size = gifSize(buf);
   else if (type === 'image/jpeg') size = jpegSize(buf);
   else if (type === 'image/webp') size = webpSize(buf);
-  if (size && Number.isFinite(size[0]) && Number.isFinite(size[1]) && size[0] > 0 && size[0] <= 20000 && size[1] > 0 && size[1] <= 20000) {
-    return { width: size[0], height: size[1] };
+  if (size) {
+    const [w, h] = size;
+    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && w <= 20000 && h > 0 && h <= 20000) {
+      return { width: w, height: h };
+    }
   }
   return { width: null, height: null };
+}
+
+// ---- Cloudinary upload (preferred when configured) ------------------------
+
+function cloudinaryCreds(): { cloudName: string; key: string; secret: string } | null {
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || 'djfvizjdh').trim();
+  let key = (process.env.CLOUDINARY_API_KEY || '').trim();
+  let secret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+  if (process.env.CLOUDINARY_URL) {
+    const m = process.env.CLOUDINARY_URL.match(/^cloudinary:\/\/(\d+):([^@]+)@([\w-]+)/);
+    if (m) {
+      key ||= m[1];
+      secret ||= m[2];
+      // favour explicit CLOUDINARY_CLOUD_NAME if user set it, else parse from URL
+      if (!process.env.CLOUDINARY_CLOUD_NAME) return { cloudName: m[3], key, secret };
+    }
+  }
+  if (!key || !secret) return null;
+  return { cloudName, key, secret };
+}
+
+async function uploadToCloudinary(buf: Buffer, type: string): Promise<{ url: string; displayUrl: string } | null> {
+  const creds = cloudinaryCreds();
+  if (!creds) return null;
+  const publicId = `wallora/uploads/wallora-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = crypto
+    .createHash('sha1')
+    .update(`public_id=${publicId}&timestamp=${timestamp}${creds.secret}`)
+    .digest('hex');
+  const form = new URLSearchParams();
+  form.set('file', `data:${type || 'image/jpeg'};base64,${buf.toString('base64')}`);
+  form.set('public_id', publicId);
+  form.set('overwrite', 'true');
+  form.set('resource_type', 'image');
+  form.set('timestamp', timestamp);
+  form.set('api_key', creds.key);
+  form.set('signature', signature);
+  let response: Response;
+  try {
+    response = await fetch(`https://api.cloudinary.com/v1_1/${creds.cloudName}/image/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch {
+    throw new Error('Cloudinary is unreachable right now.');
+  }
+  const json = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+    public_id?: string;
+  } | null;
+  if (!response.ok || !json?.public_id) {
+    throw new Error(`Cloudinary upload failed (${response.status} ${json?.error?.message || ''}).`);
+  }
+  const base = `https://res.cloudinary.com/${creds.cloudName}/image/upload`;
+  const displayUrl = `${base}/c_limit,w_900,f_auto,q_auto/${json.public_id}`;
+  const fullUrl = `${base}/${json.public_id}`;
+  return { url: fullUrl, displayUrl };
+}
+
+// ---- ImgBB upload (legacy fallback) ---------------------------------------
+
+async function uploadToImgBB(buf: Buffer): Promise<{ url: string; displayUrl: string } | null> {
+  const key = (process.env.IMGBB_API_KEY || '').trim();
+  if (!key) return null;
+  const form = new FormData();
+  form.append('image', buf.toString('base64'));
+  form.append('name', `wallora-upload-${Date.now().toString(36)}`.slice(0, 60));
+  let response: Response;
+  try {
+    response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(key)}`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new Error('ImgBB is unreachable right now.');
+  }
+  const json = (await response.json().catch(() => null)) as {
+    status_code?: number;
+    data?: { url?: string; display_url?: string };
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !json?.data?.url) {
+    const code = json?.status_code ?? response.status;
+    if (code === 103) throw new Error('ImgBB rejected this network (code 103). Try from the deployed region.');
+    throw new Error(`ImgBB upload failed (${code}).`);
+  }
+  return { url: json.data.url, displayUrl: json.data.display_url || json.data.url };
 }
 
 export async function POST(req: NextRequest) {
@@ -82,8 +175,6 @@ export async function POST(req: NextRequest) {
   if (!adminApiOk(store.get(ADMIN_COOKIE)?.value, req.url)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
-  const key = (process.env.IMGBB_API_KEY || '').trim();
-  if (!key) return NextResponse.json({ ok: false, error: 'IMGBB_API_KEY is not configured.' }, { status: 503 });
 
   let file: File | null = null;
   try {
@@ -102,29 +193,28 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const { width, height } = dimensionsOf(type, buffer);
 
-  const imgbbForm = new FormData();
-  imgbbForm.append('image', buffer.toString('base64'));
-  imgbbForm.append('name', `wallora-upload-${Date.now().toString(36)}`.slice(0, 60));
-  let response: Response;
+  // Prefer Cloudinary when configured — permanent home, no datacenter throttling.
+  // Fall back to ImgBB only if Cloudinary is not configured.
+  let uploaded: { url: string; displayUrl: string } | null = null;
+  let uploadErr: string | null = null;
+  const useCloudinary = Boolean(cloudinaryCreds());
   try {
-    response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(key)}`, {
-      method: 'POST',
-      body: imgbbForm,
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch {
-    return NextResponse.json({ ok: false, error: 'ImgBB is unreachable right now.' }, { status: 502 });
-  }
-  const json = (await response.json().catch(() => null)) as {
-    status_code?: number;
-    data?: { url?: string; display_url?: string };
-    error?: { message?: string };
-  } | null;
-  if (!response.ok || !json?.data?.url) {
-    const code = json?.status_code ?? response.status;
-    if (code === 103) return NextResponse.json({ ok: false, error: 'ImgBB rejected this network (code 103). Try from the deployed region.' }, { status: 502 });
-    return NextResponse.json({ ok: false, error: `ImgBB upload failed (${code}).` }, { status: 502 });
+    uploaded = useCloudinary ? await uploadToCloudinary(buffer, type) : await uploadToImgBB(buffer);
+  } catch (e) {
+    uploadErr = e instanceof Error ? e.message : String(e);
   }
 
-  return NextResponse.json({ ok: true, url: json.data.url, width, height });
+  if (!uploaded && useCloudinary) {
+    // Cloudinary was configured but failed — do NOT silently fall through to
+    // ImgBB (we don't want to add more i.ibb.co URLs mid-migration).
+    return NextResponse.json({ ok: false, error: uploadErr || 'Cloudinary upload failed.' }, { status: 502 });
+  }
+  if (!uploaded) {
+    return NextResponse.json(
+      { ok: false, error: 'No upload backend configured. Set CLOUDINARY_URL or IMGBB_API_KEY.' },
+      { status: 503 },
+    );
+  }
+
+  return NextResponse.json({ ok: true, url: uploaded.url, display_url: uploaded.displayUrl, width, height });
 }

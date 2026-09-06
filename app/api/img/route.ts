@@ -219,17 +219,91 @@ export async function GET(req: NextRequest) {
     return errorResponse('too large', 413);
   }
 
-  const type = (res.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
-  if (!SAFE_IMAGE_TYPES.has(type)) {
+  let contentType = (res.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+  if (!SAFE_IMAGE_TYPES.has(contentType)) {
     await res.body.cancel().catch(() => {});
     return errorResponse('unsupported image type', 502);
   }
+
+  // Hosts whose body streams are occasionally cut by datacenter-IP throttling
+  // (ImgBB / Wallhaven are known hotlink-friendly but have started dropping
+  // Vercel egress mid-stream). When a direct read fails we retry once, then
+  // fall back to a 302 so the visitor's residential IP loads the file direct.
+  const FALLBACK_HOSTS = new Set(['i.ibb.co', 'ibb.co', 'wallhaven.cc']);
+  const canBrowserFallback = FALLBACK_HOSTS.has(host) || host.endsWith('.ibb.co') || host.endsWith('.wallhaven.cc');
+
+  async function readOrRetry(response: Response): Promise<{ bytes: ArrayBuffer } | { tooLarge: true } | { readFailed: true }> {
+    try {
+      return { bytes: await readImageLimited(response) };
+    } catch (error) {
+      if (error instanceof Error && error.message === 'too_large') return { tooLarge: true };
+      return { readFailed: true };
+    }
+  }
+
+  let firstRead = await readOrRetry(res);
+  if ('tooLarge' in firstRead) {
+    await res.body?.cancel().catch(() => {});
+    return errorResponse('too large', 413);
+  }
   let bytes: ArrayBuffer;
-  try {
-    bytes = await readImageLimited(res);
-  } catch (error) {
-    const tooLarge = error instanceof Error && error.message === 'too_large';
-    return errorResponse(tooLarge ? 'too large' : 'upstream read failed', tooLarge ? 413 : 502);
+  if ('bytes' in firstRead) {
+    bytes = firstRead.bytes;
+  } else {
+    // First read cut mid-stream — discard it, wait briefly, re-fetch upstream,
+    // and try once more. The 3-tries inside upstream() already cover 444/429/5xx;
+    // this is specifically for body-stream truncation after a 200 header.
+    await res.body?.cancel().catch(() => {});
+    await new Promise((r) => setTimeout(r, 500));
+    const retryRes = await upstream(target, {
+      Referer: `https://${host}/`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
+    });
+    if (!retryRes.ok || !retryRes.body) {
+      await retryRes.body?.cancel().catch(() => {});
+      if (canBrowserFallback) {
+        return new NextResponse(null, {
+          status: 302,
+          headers: {
+            Location: target.toString(),
+            'Cache-Control': 'no-store',
+            'X-Img-Fallback': 'redirect',
+          },
+        });
+      }
+      return errorResponse(`upstream ${retryRes.status}`, 502);
+    }
+    const retryDeclared = Number(retryRes.headers.get('content-length') ?? 0);
+    if (retryDeclared > MAX_IMAGE_BYTES) {
+      await retryRes.body.cancel().catch(() => {});
+      return errorResponse('too large', 413);
+    }
+    contentType = (retryRes.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+    if (!SAFE_IMAGE_TYPES.has(contentType)) {
+      await retryRes.body.cancel().catch(() => {});
+      return errorResponse('unsupported image type', 502);
+    }
+    const secondRead = await readOrRetry(retryRes);
+    if ('tooLarge' in secondRead) {
+      await retryRes.body?.cancel().catch(() => {});
+      return errorResponse('too large', 413);
+    }
+    if ('readFailed' in secondRead) {
+      await retryRes.body?.cancel().catch(() => {});
+      if (canBrowserFallback) {
+        return new NextResponse(null, {
+          status: 302,
+          headers: {
+            Location: target.toString(),
+            'Cache-Control': 'no-store',
+            'X-Img-Fallback': 'redirect',
+          },
+        });
+      }
+      return errorResponse('upstream read failed', 502);
+    }
+    bytes = secondRead.bytes;
   }
 
   const source = Buffer.from(bytes);
@@ -241,10 +315,10 @@ export async function GET(req: NextRequest) {
   if (
     wantOriginal ||
     host === PRE_OPTIMISED_HOST ||
-    type === ANIMATED_TYPE ||
+    contentType === ANIMATED_TYPE ||
     source.byteLength < PASSTHROUGH_BYTES
   ) {
-    return imageResponse(source, type, host);
+    return imageResponse(source, contentType, host);
   }
 
   try {
@@ -257,6 +331,6 @@ export async function GET(req: NextRequest) {
   } catch {
     // Corrupt / unsupported input: send the original bytes through untouched.
     // A bad upstream image must never turn into a 500 for the visitor.
-    return imageResponse(source, type, host);
+    return imageResponse(source, contentType, host);
   }
 }
