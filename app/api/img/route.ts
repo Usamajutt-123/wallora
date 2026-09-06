@@ -129,6 +129,37 @@ const PASSTHROUGH_BYTES = 150 * 1024;
 const PRE_OPTIMISED_HOST = 'res.cloudinary.com';
 
 /**
+ * Remove on-the-fly transform segments and version folder from a Cloudinary
+ * URL so we fetch the originally uploaded asset rather than a resized/encoded
+ * derivative. Works for both `.../upload/<transforms>/<public_id>` and
+ * `.../upload/<transforms>/vNNN/<public_id>` forms.
+ *
+ * Returns a new URL if something was stripped, or null if the URL isn't a
+ * Cloudinary /image/upload/ path (or has no transform segments to strip).
+ */
+function stripCloudinaryTransform(url: URL): URL | null {
+  const parts = url.pathname.split('/');
+  // Locate the 'upload' segment.
+  const uploadIdx = parts.indexOf('upload');
+  if (uploadIdx < 0) return null;
+  // Skip every segment after 'upload' that looks like a transform (contains a
+  // comma) or a version (vNNNNN). The first segment that doesn't match is the
+  // public_id start.
+  let i = uploadIdx + 1;
+  while (i < parts.length) {
+    const seg = parts[i];
+    const isTransform = seg.includes(',');                        // w_900,c_limit,f_auto,…
+    const isVersion = /^v\d+$/.test(seg);                         // v1234567
+    if (!isTransform && !isVersion) break;
+    i++;
+  }
+  if (i === uploadIdx + 1) return null; // nothing to strip — already the raw form
+  const rebuilt = new URL(url.toString());
+  rebuilt.pathname = [...parts.slice(0, uploadIdx + 1), ...parts.slice(i)].join('/');
+  return rebuilt;
+}
+
+/**
  * Animated GIFs must never reach sharp: a resize/re-encode keeps only the FIRST
  * frame, silently turning an animated wallpaper into a still one.
  */
@@ -200,6 +231,18 @@ export async function GET(req: NextRequest) {
     return errorResponse('too many image requests — slow down', 429, { 'Retry-After': '60' });
   }
 
+  // `full=1` asks for the original, unresized asset. For Cloudinary URLs the
+  // stored path contains the on-the-fly transform segment
+  // (`c_limit,w_900,f_auto,q_auto`, possibly with version `vNNN`), so strip
+  // those transform/version segments and re-fetch the raw public_id — that is
+  // the full-resolution upload (verified manually against both the with-ext
+  // and without-ext public_id forms).
+  const wantOriginal = req.nextUrl.searchParams.get('full') === '1';
+  if (wantOriginal && host === PRE_OPTIMISED_HOST) {
+    const stripped = stripCloudinaryTransform(target);
+    if (stripped) target = stripped;
+  }
+
   // look like a first-party request to the source CDN
   const res = await upstream(target, {
     Referer: `https://${host}/`,
@@ -219,32 +262,111 @@ export async function GET(req: NextRequest) {
     return errorResponse('too large', 413);
   }
 
-  const type = (res.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
-  if (!SAFE_IMAGE_TYPES.has(type)) {
+  let contentType = (res.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+  if (!SAFE_IMAGE_TYPES.has(contentType)) {
     await res.body.cancel().catch(() => {});
     return errorResponse('unsupported image type', 502);
   }
+
+  // Hosts whose body streams are occasionally cut by datacenter-IP throttling
+  // (ImgBB / Wallhaven / NexWall Kodnex CDN are all hotlink-friendly but have
+  // been observed dropping Vercel egress mid-stream). When a direct read fails
+  // we retry once, then fall back to a 302 so the visitor's residential IP
+  // loads the file direct.
+  const FALLBACK_HOSTS = new Set(['i.ibb.co', 'ibb.co', 'wallhaven.cc', 'kodnextech.com', 'nexwall.kodnextech.com']);
+  const canBrowserFallback =
+    FALLBACK_HOSTS.has(host) ||
+    host.endsWith('.ibb.co') ||
+    host.endsWith('.wallhaven.cc') ||
+    host.endsWith('.kodnextech.com');
+
+  async function readOrRetry(response: Response): Promise<{ bytes: ArrayBuffer } | { tooLarge: true } | { readFailed: true }> {
+    try {
+      return { bytes: await readImageLimited(response) };
+    } catch (error) {
+      if (error instanceof Error && error.message === 'too_large') return { tooLarge: true };
+      return { readFailed: true };
+    }
+  }
+
+  let firstRead = await readOrRetry(res);
+  if ('tooLarge' in firstRead) {
+    await res.body?.cancel().catch(() => {});
+    return errorResponse('too large', 413);
+  }
   let bytes: ArrayBuffer;
-  try {
-    bytes = await readImageLimited(res);
-  } catch (error) {
-    const tooLarge = error instanceof Error && error.message === 'too_large';
-    return errorResponse(tooLarge ? 'too large' : 'upstream read failed', tooLarge ? 413 : 502);
+  if ('bytes' in firstRead) {
+    bytes = firstRead.bytes;
+  } else {
+    // First read cut mid-stream — discard it, wait briefly, re-fetch upstream,
+    // and try once more. The 3-tries inside upstream() already cover 444/429/5xx;
+    // this is specifically for body-stream truncation after a 200 header.
+    await res.body?.cancel().catch(() => {});
+    await new Promise((r) => setTimeout(r, 500));
+    const retryRes = await upstream(target, {
+      Referer: `https://${host}/`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
+    });
+    if (!retryRes.ok || !retryRes.body) {
+      await retryRes.body?.cancel().catch(() => {});
+      if (canBrowserFallback) {
+        return new NextResponse(null, {
+          status: 302,
+          headers: {
+            Location: target.toString(),
+            'Cache-Control': 'no-store',
+            'X-Img-Fallback': 'redirect',
+          },
+        });
+      }
+      return errorResponse(`upstream ${retryRes.status}`, 502);
+    }
+    const retryDeclared = Number(retryRes.headers.get('content-length') ?? 0);
+    if (retryDeclared > MAX_IMAGE_BYTES) {
+      await retryRes.body.cancel().catch(() => {});
+      return errorResponse('too large', 413);
+    }
+    contentType = (retryRes.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+    if (!SAFE_IMAGE_TYPES.has(contentType)) {
+      await retryRes.body.cancel().catch(() => {});
+      return errorResponse('unsupported image type', 502);
+    }
+    const secondRead = await readOrRetry(retryRes);
+    if ('tooLarge' in secondRead) {
+      await retryRes.body?.cancel().catch(() => {});
+      return errorResponse('too large', 413);
+    }
+    if ('readFailed' in secondRead) {
+      await retryRes.body?.cancel().catch(() => {});
+      if (canBrowserFallback) {
+        return new NextResponse(null, {
+          status: 302,
+          headers: {
+            Location: target.toString(),
+            'Cache-Control': 'no-store',
+            'X-Img-Fallback': 'redirect',
+          },
+        });
+      }
+      return errorResponse('upstream read failed', 502);
+    }
+    bytes = secondRead.bytes;
   }
 
   const source = Buffer.from(bytes);
   const width = parseWidth(req.nextUrl.searchParams.get('w'));
   // `full=1` keeps the original bytes — the download button uses it so saved
-  // files are full quality rather than a resized WebP preview.
-  const wantOriginal = req.nextUrl.searchParams.get('full') === '1';
+  // files are full quality rather than a resized WebP preview. (Declared
+  // above so the Cloudinary transform strip can branch on it before fetch.)
 
   if (
     wantOriginal ||
     host === PRE_OPTIMISED_HOST ||
-    type === ANIMATED_TYPE ||
+    contentType === ANIMATED_TYPE ||
     source.byteLength < PASSTHROUGH_BYTES
   ) {
-    return imageResponse(source, type, host);
+    return imageResponse(source, contentType, host);
   }
 
   try {
@@ -257,6 +379,6 @@ export async function GET(req: NextRequest) {
   } catch {
     // Corrupt / unsupported input: send the original bytes through untouched.
     // A bad upstream image must never turn into a 500 for the visitor.
-    return imageResponse(source, type, host);
+    return imageResponse(source, contentType, host);
   }
 }
