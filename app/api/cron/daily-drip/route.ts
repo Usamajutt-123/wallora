@@ -3,7 +3,7 @@ import { fetchNexwallWallpapers, nexwallConfigured } from '@/lib/nexwall';
 import { fetchAnimePixels } from '@/lib/animepixels';
 import { fetchWallhavenSearch, withShelf, WH_SHELVES } from '@/lib/wallhaven';
 import { filterWallpapers } from '@/lib/filters';
-import { mirrorWallsToImgBB, imgbbConfigured } from '@/lib/imgbb';
+import { mirrorWallsToImgBB, mirrorConfigured } from '@/lib/imgbb';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -26,9 +26,10 @@ export const maxDuration = 60;
  *
  * Duplicate-proof: anything already in the DB is filtered out before insert.
  *
- * ImgBB mirror: at the end, up to WALLORA_IMGBB_PER_RUN freshly inserted
- * wallpapers are mirrored to ImgBB (best-effort) so images survive source
- * outages. Mirror failures never fail the run.
+ * Image mirror: at the end, up to WALLORA_IMGBB_PER_RUN freshly inserted
+ * wallpapers are mirrored to Cloudinary when configured, or ImgBB only as a
+ * legacy fallback (best-effort), so images survive source outages. Mirror
+ * failures never fail the run.
  */
 
 const CAPS = { nexwall: 12, wallhaven: 10, animepixels: 15 };
@@ -133,13 +134,14 @@ export async function GET(req: NextRequest) {
   if (statsError) log.push(`⚠ Stats refresh skipped: ${statsError.message}`);
   await sb.from('sync_runs').insert({ source: 'daily-drip', inserted: total, note: log.join(' | ') }).then(() => {});
 
-  // 🖼 Best-effort ImgBB mirror of the newest walls (never blocks the run)
-  if (imgbbConfigured() && insertedRows.length) {
+  // 🖼 Best-effort permanent mirror of the newest walls (never blocks the run).
+  // Cloudinary is preferred; ImgBB is used only when Cloudinary is absent.
+  if (mirrorConfigured() && insertedRows.length) {
     try {
       const mirror = await mirrorWallsToImgBB(insertedRows);
-      log.push(`🖼 ImgBB: ${mirror.note}`);
+      log.push(`🖼 Image mirror: ${mirror.note}`);
     } catch (e) {
-      log.push(`🖼 ImgBB mirror skipped: ${e instanceof Error ? e.message.slice(0, 80) : 'err'}`);
+      log.push(`🖼 Image mirror skipped: ${e instanceof Error ? e.message.slice(0, 80) : 'err'}`);
     }
   }
 

@@ -38,22 +38,23 @@ export default function Hero({ tiles, stats }: { tiles: Wallpaper[]; stats: Site
               }}
             >
               {[...col, ...col, ...col, ...col].map((t, j) => {
-                const { src, srcSet, sizes } = imgSrcSet(t.thumb_url, { sizes: HERO_SIZES });
-                // Row 1 of the mosaic = j===0 of every column (the duplicated
-                // copies further down the marquee are cache hits, not bytes).
-                // The three left-most columns are the above-the-fold tiles on a
-                // phone — they get high fetch priority (and are preloaded in
-                // <head> by the page). Everything else stays lazy.
-                const eager = j === 0;
+                const { src, srcSet, sizes, candidates } = imgSrcSet(t.thumb_url, { sizes: HERO_SIZES });
+                // Only the three columns visible in the first mobile row are
+                // eager/high priority. React 19 preloads eager images, so the
+                // duplicated marquee copies and off-screen columns stay lazy.
+                const eager = j === 0 && i < 3;
+                // Keep any fallback preload on the exact 380w mobile candidate;
+                // the responsive srcSet still upgrades it on larger screens.
+                const mobileSrc = candidates?.[0] || src;
                 return (
                   <img
                     key={`${t.id}-${j}`}
-                    src={src}
+                    src={eager ? mobileSrc : src}
                     srcSet={srcSet}
                     sizes={sizes}
                     alt=""
                     loading={eager ? 'eager' : 'lazy'}
-                    fetchPriority={i < 3 && eager ? 'high' : undefined}
+                    fetchPriority={eager ? 'high' : undefined}
                     decoding="async"
                     className="w-full rounded-2xl bg-zinc-900 object-cover aspect-[3/4] brightness-[0.85]"
                   />

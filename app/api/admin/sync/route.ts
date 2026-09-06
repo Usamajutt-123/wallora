@@ -4,7 +4,7 @@ import { fetchNexwallCategories, fetchNexwallWallpapers, nexwallConfigured } fro
 import { fetchAnimePixels } from '@/lib/animepixels';
 import { fetchWallhavenSearch, withShelf, WH_SHELVES } from '@/lib/wallhaven';
 import { filterCategories, filterWallpapers } from '@/lib/filters';
-import { mirrorWallsToImgBB, imgbbConfigured } from '@/lib/imgbb';
+import { mirrorWallsToImgBB, mirrorConfigured } from '@/lib/imgbb';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -227,14 +227,15 @@ export async function POST(req: NextRequest) {
   const { error: statsError } = await sb.rpc('refresh_site_stats');
   if (statsError) log.push(`⚠ Stats refresh skipped: ${statsError.message}`);
 
-  // 🖼 Best-effort ImgBB mirror of the rows this sync just published. Mirror
-  // problems are logged, never fatal — the catalog is already saved above.
-  if (imgbbConfigured() && insertedRows.length) {
+  // 🖼 Best-effort permanent mirror of the rows this sync just published.
+  // Cloudinary is preferred; ImgBB is used only when Cloudinary is absent.
+  // Mirror problems are logged, never fatal — the catalog is already saved.
+  if (mirrorConfigured() && insertedRows.length) {
     try {
       const mirror = await mirrorWallsToImgBB(insertedRows);
-      log.push(`🖼 ImgBB: ${mirror.note}`);
+      log.push(`🖼 Image mirror: ${mirror.note}`);
     } catch (e) {
-      log.push(`🖼 ImgBB mirror skipped: ${e instanceof Error ? e.message.slice(0, 90) : 'err'}`);
+      log.push(`🖼 Image mirror skipped: ${e instanceof Error ? e.message.slice(0, 90) : 'err'}`);
     }
   }
 

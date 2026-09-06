@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * ═══════════════════════════════════════════════════════════════════
- *  WALLORA PIPELINE — Wallhaven → ImgBB → Supabase
+ *  WALLORA PIPELINE — Wallhaven → permanent mirror → Supabase
  * ═══════════════════════════════════════════════════════════════════
  *
  *  What it does, per category run:
  *    1. Searches Wallhaven (toplist) for the given query
- *    2. Skips wallpapers already in Supabase (saves ImgBB quota!)
+ *    2. Skips wallpapers already in Supabase (saves mirror quota!)
  *    3. Downloads the image binary from Wallhaven CDN
- *    4. Uploads it to ImgBB (independent mirror + direct URL)
- *    5. Stores the final ImgBB link + category + title in Supabase
+ *    4. Uploads it to Cloudinary when configured (legacy ImgBB fallback)
+ *    5. Stores the final mirror link + category + title in Supabase
  *
  *  USAGE:
  *    node scripts/wallhaven-imgbb-pipeline.js "anime"            → top 15
@@ -17,7 +17,9 @@
  *    node scripts/wallhaven-imgbb-pipeline.js "nature" 2 --dry   → test run (no upload/DB)
  *
  *  REQUIRED .env:
- *    IMGBB_API_KEY=...            → https://api.imgbb.com
+ *    CLOUDINARY_URL=cloudinary://... (preferred), or the three
+ *      CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET variables
+ *    IMGBB_API_KEY=...            → legacy fallback when Cloudinary is absent
  *    NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
  *    SUPABASE_SERVICE_ROLE_KEY=eyJ...     (service key — server only)
  *  OPTIONAL:
@@ -35,6 +37,7 @@ import { config } from 'dotenv';
 config({ path: '.env.local', quiet: true });
 config({ quiet: true }); // .env fills only vars .env.local didn't set
 import { createClient } from '@supabase/supabase-js';
+import { isCloudinaryMirror, mirrorBackend, uploadMirror } from './mirror-upload.mjs';
 
 /* ────────────────────────── 1. CONFIG ────────────────────────── */
 
@@ -52,10 +55,8 @@ const CONFIG = {
     sorting: 'toplist', // established uploads
   },
 
-  imgbb: {
-    base: 'https://api.imgbb.com/1/upload',
-    apiKey: process.env.IMGBB_API_KEY || '',
-    maxBytes: 30 * 1024 * 1024, // conservative local transfer guard
+  mirror: {
+    maxBytes: 40 * 1024 * 1024, // source transfer guard; Cloudinary resizes above 10 MB
   },
 
   supabase: {
@@ -80,11 +81,12 @@ const blockedContent = (text) => sexualTerms.test(text) || strongPhotoTerms.test
 if (!CONFIG.query || blockedContent(CONFIG.query)) {
   fail('Query blocked by WALLORA content policy. Anime/illustrated characters are allowed; real-person/glamour or sexualized queries are not.');
 }
-if (process.argv.includes('--selftest') && CONFIG.dryRun) fail('--selftest is a real ImgBB upload and cannot be combined with --dry.');
+if (process.argv.includes('--selftest') && CONFIG.dryRun) fail('--selftest is a real mirror upload and cannot be combined with --dry.');
 
+const MIRROR_BACKEND = mirrorBackend();
 if (!CONFIG.dryRun) {
-  if (!CONFIG.imgbb.apiKey) fail('IMGBB_API_KEY missing — configure a valid key from https://api.imgbb.com');
-  // --selftest only needs ImgBB; the full pipeline needs Supabase too
+  if (!MIRROR_BACKEND) fail('Cloudinary credentials or IMGBB_API_KEY missing');
+  // --selftest only needs the selected mirror backend; the full pipeline needs Supabase too
   if (!process.argv.includes('--selftest') && (!CONFIG.supabase.url || !CONFIG.supabase.key)) {
     fail('NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing');
   }
@@ -237,19 +239,17 @@ async function existingMirror(wallhavenId) {
   if (catalog.error) throw new Error(`catalog dedupe lookup: ${catalog.error.message}`);
   const rawWallpaperUrl = catalog.data?.mirror_url || audit.data?.wallpaper_url || null;
   if (!rawWallpaperUrl) return null;
-  let wallpaperUrl;
-  try {
-    wallpaperUrl = trustedUrl(rawWallpaperUrl, ['i.ibb.co']).toString();
-  } catch {
-    return null; // never reconnect an untrusted legacy mirror
-  }
+  const trustedMirror = (value) => {
+    try {
+      return trustedUrl(value, ['i.ibb.co']).toString();
+    } catch {
+      return isCloudinaryMirror(value) ? new URL(value).toString() : null;
+    }
+  };
+  const wallpaperUrl = trustedMirror(rawWallpaperUrl);
+  if (!wallpaperUrl) return null; // never reconnect an untrusted legacy mirror
   const rawDisplayUrl = audit.data?.display_url || catalog.data?.thumb_url || wallpaperUrl;
-  let displayUrl = wallpaperUrl;
-  try {
-    displayUrl = trustedUrl(rawDisplayUrl, ['i.ibb.co']).toString();
-  } catch {
-    /* full trusted mirror is a safe display fallback */
-  }
+  const displayUrl = trustedMirror(rawDisplayUrl) || wallpaperUrl;
   return {
     wallpaper_url: wallpaperUrl,
     display_url: displayUrl,
@@ -277,9 +277,9 @@ async function readLimited(response) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > CONFIG.imgbb.maxBytes) {
+    if (total > CONFIG.mirror.maxBytes) {
       await reader.cancel();
-      throw new Error(`too large for ImgBB (over ${Math.round(CONFIG.imgbb.maxBytes / 1e6)}MB)`);
+      throw new Error(`source image too large (over ${Math.round(CONFIG.mirror.maxBytes / 1e6)}MB)`);
     }
     chunks.push(Buffer.from(value));
   }
@@ -300,45 +300,24 @@ async function downloadImage(w) {
   if (!IMAGE_TYPES.has(type)) throw new Error(`unsupported image type: ${type || 'missing'}`);
 
   const len = Number(res.headers.get('content-length') || 0);
-  if (len > CONFIG.imgbb.maxBytes) throw new Error(`too large for ImgBB: ${Math.round(len / 1e6)}MB`);
+  if (len > CONFIG.mirror.maxBytes) throw new Error(`source image too large: ${Math.round(len / 1e6)}MB`);
 
   const buf = await readLimited(res);
   if (!buf.length) throw new Error('empty download');
-  return buf;
+  return { buffer: buf, type };
 }
 
-/* ────────────────── 7. STEP 3 — UPLOAD TO IMGBB ──────────────── */
+/* ────────────────── 7. STEP 3 — UPLOAD TO MIRROR ────────────── */
 
-async function uploadToImgBB(buffer, w) {
-  const form = new FormData();
-  form.append('image', buffer.toString('base64')); // ImgBB accepts base64 in the "image" field
-  form.append('name', `wallora-${CONFIG.query}-${w.wallhaven_id}`);
-
-  // Do not automatically retry this non-idempotent upload; an ambiguous 5xx
-  // response could otherwise create duplicate orphan mirrors.
-  const res = await http(`${CONFIG.imgbb.base}?key=${CONFIG.imgbb.apiKey}`, {
-    method: 'POST',
-    body: form,
-  }, 1);
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`ImgBB upload HTTP ${res.status} — ${body.slice(0, 160)}`);
-  }
-
-  const json = await res.json();
-  if (!json?.success || !json?.data?.url) throw new Error('ImgBB responded without data.url');
-  const direct = new URL(json.data.url);
-  if (direct.protocol !== 'https:' || !(direct.hostname === 'i.ibb.co' || direct.hostname.endsWith('.i.ibb.co'))) {
-    throw new Error('ImgBB returned an unexpected image host');
-  }
-  let display = null;
-  if (json.data.display_url) {
-    const candidate = new URL(json.data.display_url);
-    if (candidate.protocol === 'https:' && (candidate.hostname === 'i.ibb.co' || candidate.hostname.endsWith('.i.ibb.co'))) {
-      display = candidate.toString();
-    }
-  }
-  return { wallpaper_url: direct.toString(), display_url: display };
+async function uploadImageMirror(buffer, type, wall) {
+  const uploaded = await uploadMirror({
+    buffer,
+    contentType: type,
+    source: 'wallhaven',
+    sourceId: wall.wallhaven_id,
+    name: `wallora-${CONFIG.query}-${wall.wallhaven_id}`,
+  });
+  return { wallpaper_url: uploaded.url, display_url: uploaded.url, backend: uploaded.backend };
 }
 
 /* ─────────────── 8. STEP 4 — SAVE LINK TO SUPABASE ───────────── */
@@ -358,7 +337,7 @@ async function saveToSupabase(w, links) {
   const { error: auditError } = await supabase
     .from(CONFIG.supabase.table)
     .upsert(auditRow, { onConflict: 'wallhaven_id' });
-  if (auditError) throw new Error(`ImgBB audit insert: ${auditError.message}`);
+  if (auditError) throw new Error(`Mirror audit insert: ${auditError.message}`);
 
   // Also connect the upload to the site's actual catalog. If this Wallhaven id
   // already arrived through API Sync, only its mirror/metadata are refreshed.
@@ -390,28 +369,28 @@ async function saveToSupabase(w, links) {
 async function main() {
   console.log(`
 ╔═══════════════════════════════════════════════╗
-  WALLORA pipeline  ·  Wallhaven → ImgBB → Supabase
+  WALLORA pipeline  ·  Wallhaven → ${MIRROR_BACKEND || 'mirror'} → Supabase
 ╚═══════════════════════════════════════════════╝`);
 
-  // ── --selftest: prove the ImgBB key works from THIS machine (1×1 px upload)
+  // ── --selftest: prove the selected mirror backend works (1×1 px upload)
   if (process.argv.includes('--selftest')) {
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       'base64',
     );
     try {
-      const up = await uploadToImgBB(png, { wallhaven_id: 'selftest' });
-      console.log(`✅ ImgBB key VALID on this machine!\n   direct: ${up.wallpaper_url}\n   display: ${up.display_url || '(same as direct)'}`);
+      const up = await uploadImageMirror(png, 'image/png', { wallhaven_id: 'selftest' });
+      console.log(`✅ ${MIRROR_BACKEND} self-test passed on this machine!\n   direct: ${up.wallpaper_url}\n   display: ${up.display_url || '(same as direct)'}`);
       process.exit(0);
     } catch (e) {
-      console.log(`❌ ImgBB upload failed from here: ${e.message}\n   (if "forbidden" → this network/IP is blocked; run from your home PC)`);
+      console.log(`❌ ${MIRROR_BACKEND} upload failed from here: ${e.message}\n   (if the provider rejects this network, run from the deployed region or home PC)`);
       process.exit(1);
     }
   }
 
   log(`🔎 Category/query : "${CONFIG.query}"`);
   log(`🔢 Limit          : top ${CONFIG.limit} (toplist, SFW)`);
-  log(`🧪 Mode           : ${CONFIG.dryRun ? 'DRY RUN (no ImgBB upload, no DB writes)' : 'LIVE'}\n`);
+  log(`🧪 Mode           : ${CONFIG.dryRun ? 'DRY RUN (no mirror upload, no DB writes)' : 'LIVE'}\n`);
 
   // ── search ──
   let walls;
@@ -441,7 +420,7 @@ async function main() {
             continue;
           }
           await saveToSupabase(w, existing);
-          log(`${tag} ⏭  existing ImgBB mirror reconnected — no upload`);
+          log(`${tag} ⏭  existing ${MIRROR_BACKEND} mirror reconnected — no upload`);
           stats.skipped++;
           continue;
         }
@@ -453,16 +432,17 @@ async function main() {
       }
 
       // download binary from the 'path' URL
-      const buffer = await downloadImage(w);
+      const downloaded = await downloadImage(w);
+      const buffer = downloaded.buffer;
       log(`${tag} ⬇  ${Math.round(buffer.length / 1024)}KB (${w.resolution || 'unknown res'}) — "${w.title.slice(0, 42)}"`);
 
       if (CONFIG.dryRun) {
         log(`${tag} 🧪 dry-run complete for this image`);
         stats.ok++;
       } else {
-        // upload to ImgBB → independent mirror link
-        const links = await uploadToImgBB(buffer, w);
-        log(`${tag} ☁  ImgBB → ${links.wallpaper_url}`);
+        // upload to the selected mirror backend → independent mirror link
+        const links = await uploadImageMirror(buffer, downloaded.type, w);
+        log(`${tag} ☁  ${links.backend} → ${links.wallpaper_url}`);
 
         // save row
         await saveToSupabase(w, links);
