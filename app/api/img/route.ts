@@ -119,12 +119,6 @@ const MIN_WIDTH = 1;
 const MAX_WIDTH = 2560;
 const WEBP_QUALITY = 80;
 
-/**
- * Below this the transform cannot pay for itself: a small source file is
- * already cheap, and re-encoding would only spend CPU (and can even grow it).
- */
-const PASSTHROUGH_BYTES = 150 * 1024;
-
 /** Cloudinary URLs arrive pre-optimised (`c_limit,w_900,f_auto,q_auto`). */
 const PRE_OPTIMISED_HOST = 'res.cloudinary.com';
 
@@ -360,12 +354,7 @@ export async function GET(req: NextRequest) {
   // files are full quality rather than a resized WebP preview. (Declared
   // above so the Cloudinary transform strip can branch on it before fetch.)
 
-  if (
-    wantOriginal ||
-    host === PRE_OPTIMISED_HOST ||
-    contentType === ANIMATED_TYPE ||
-    source.byteLength < PASSTHROUGH_BYTES
-  ) {
+  if (wantOriginal || host === PRE_OPTIMISED_HOST || contentType === ANIMATED_TYPE) {
     return imageResponse(source, contentType, host);
   }
 

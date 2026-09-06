@@ -1,3 +1,4 @@
+import LazyTileUpgrader from '@/components/LazyTileUpgrader';
 import { getCategories } from '@/lib/db';
 import { imgSrcSet } from '@/lib/img';
 import { fmt } from '@/lib/utils';
@@ -21,6 +22,12 @@ const CATS_PAGE_SIZES =
 // lazy so their bytes do not compete with the LCP request.
 const EAGER_COUNT = 3;
 
+// SSR src for below-the-fold tiles: a 1×1 transparent GIF data URI — never
+// fetched, proxy not involved. The real /api/img URL rides in data-lazy-src
+// and is swapped in by LazyTileUpgrader as the tile nears the viewport.
+const PLACEHOLDER =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 export default async function CategoriesPage() {
   const categories = await getCategories();
 
@@ -34,6 +41,7 @@ export default async function CategoriesPage() {
         {categories.length} curated categories — from midnight amoled to daylight minimal. Pick one and dive in.
       </p>
 
+      <LazyTileUpgrader>
       <div className="mt-12 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {categories.map((c, i) => {
           const { src, srcSet, sizes, candidates } = imgSrcSet(c.cover_url, { sizes: CATS_PAGE_SIZES });
@@ -50,16 +58,30 @@ export default async function CategoriesPage() {
             }`}
           >
             {c.cover_url ? (
-              <img
-                src={eager ? mobileSrc : src}
-                srcSet={srcSet}
-                sizes={sizes}
-                alt={c.name}
-                loading={eager ? 'eager' : 'lazy'}
-                fetchPriority={eager ? 'high' : undefined}
-                decoding="async"
-                className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
-              />
+              eager ? (
+                <img
+                  src={mobileSrc}
+                  srcSet={srcSet}
+                  sizes={sizes}
+                  alt={c.name}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
+                  className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                />
+              ) : (
+                <img
+                  src={PLACEHOLDER}
+                  data-lazy-src={src}
+                  data-lazy-srcset={srcSet}
+                  data-lazy-sizes={sizes}
+                  alt={c.name}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ opacity: 0 }}
+                  className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                />
+              )
             ) : (
               <div className="absolute inset-0 bg-gradient-to-br from-accent/40 to-accent2/20" />
             )}
@@ -77,6 +99,7 @@ export default async function CategoriesPage() {
           );
         })}
       </div>
+      </LazyTileUpgrader>
     </div>
   );
 }
