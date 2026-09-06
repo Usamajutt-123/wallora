@@ -9,8 +9,10 @@ import SectionHeading from '@/components/SectionHeading';
 import { getCategories, getFeatured, getHeroTiles, getSiteStats, getTrending, getWallpapers } from '@/lib/db';
 import { getAdsConfig } from '@/lib/ads';
 import AdSlot from '@/components/ads/AdSlot';
+import { siteUrl } from '@/lib/seo';
 import type { SortMode } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, jsonLdString } from '@/lib/utils';
+import type { Metadata } from 'next';
 
 // ISR — the whole page (hero, trending, feed, stats) is edge-cached for 5
 // minutes. Stats may trail live tracking by up to 5 min: acceptable, the
@@ -18,6 +20,21 @@ import { cn } from '@/lib/utils';
 // page — that would silently flip the route back to per-request rendering and
 // kill the edge cache (it did exactly that at revalidate=60).
 export const revalidate = 300;
+
+// Absolute canonical via the shared site-URL convention, same as /wallpaper/[id].
+export const metadata: Metadata = {
+  alternates: { canonical: siteUrl('/') },
+};
+
+/** WebSite JSON-LD — same render style as the detail page's structured data. */
+const websiteLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'WALLORA',
+  url: siteUrl('/'),
+  description:
+    'Discover high-resolution wallpapers across anime, gaming, nature, AMOLED, space and more in a fast multi-source catalog.',
+};
 
 /** Feed-sort pills point at the (deliberately dynamic) search page. */
 const SORTS: { id: SortMode; label: string }[] = [
@@ -63,6 +80,7 @@ export default async function Home() {
   // stays lazy and loads in the background while the user scrolls.
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(websiteLd) }} />
       <Hero tiles={latest} stats={stats} />
       <Ticker />
 

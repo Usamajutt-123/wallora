@@ -17,7 +17,9 @@ export const metadata: Metadata = {
   description:
     'Discover high-resolution wallpapers across anime, gaming, nature, AMOLED, space and more in a fast multi-source catalog.',
   keywords: ['wallpapers', '4K wallpapers', 'HD background', 'amoled', 'anime wallpapers'],
-  openGraph: { siteName: 'WALLORA', type: 'website' },
+  // No openGraph.images here — the per-route opengraph-image.tsx generators
+  // (home, /categories, /search, /blog, /blog/[slug]) provide them.
+  openGraph: { type: 'website', siteName: 'WALLORA', locale: 'en_US' },
 };
 
 export const viewport: Viewport = {

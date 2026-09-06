@@ -1,6 +1,7 @@
 import LazyTileUpgrader from '@/components/LazyTileUpgrader';
 import { getCategories } from '@/lib/db';
 import { imgSrcSet } from '@/lib/img';
+import { siteUrl } from '@/lib/seo';
 import { fmt } from '@/lib/utils';
 import type { Metadata } from 'next';
 
@@ -9,7 +10,11 @@ import type { Metadata } from 'next';
 // window). Edge-cached for 5 minutes: this page used to run the full catalog
 // scan on EVERY request, which is why TTFB was 0.4–1.9 s on 4G.
 export const revalidate = 300;
-export const metadata: Metadata = { title: 'Categories' };
+export const metadata: Metadata = {
+  title: 'Categories',
+  // Absolute canonical via the shared site-URL convention, same as /wallpaper/[id].
+  alternates: { canonical: siteUrl('/categories') },
+};
 
 /** Grid tile width per breakpoint: 2 cols on phones, 3 on sm, 4 on lg. */
 const CATS_PAGE_SIZES =
