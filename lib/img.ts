@@ -50,8 +50,12 @@ const PROXY_HOSTS = [
  *      catalog; bump invalidates all prior cached copies so browsers fetch
  *      the new Cloudinary-backed URLs. Also strips the Cloudinary transform
  *      segment when ?full=1 so the Download button returns original bytes.
+ * v6 — /api/img no longer passes through sub-150KB sources untouched; every
+ *      proxied image is resized to the requested width (withoutEnlargement)
+ *      and re-encoded as WebP, so Cloudinary's 810–900px pre-optimised JPEGs
+ *      are no longer served as-is to small grid tiles.
  */
-export const IMG_PROXY_VERSION = 5;
+export const IMG_PROXY_VERSION = 6;
 
 /** Width (CSS px) the proxy resizes to when a caller does not ask for one. */
 export const IMG_DEFAULT_WIDTH = 900;
