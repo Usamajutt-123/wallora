@@ -46,8 +46,12 @@ const PROXY_HOSTS = [
  * v4 — pages emit responsive `srcset` candidates (380/760/1440), so the URL
  *      shape a browser can request changed; every tile now gets the width its
  *      render box actually needs instead of a blanket 900 px.
+ * v5 — Part B (i.ibb.co → Cloudinary migration) rewrites image URLs in the
+ *      catalog; bump invalidates all prior cached copies so browsers fetch
+ *      the new Cloudinary-backed URLs. Also strips the Cloudinary transform
+ *      segment when ?full=1 so the Download button returns original bytes.
  */
-export const IMG_PROXY_VERSION = 4;
+export const IMG_PROXY_VERSION = 5;
 
 /** Width (CSS px) the proxy resizes to when a caller does not ask for one. */
 export const IMG_DEFAULT_WIDTH = 900;
