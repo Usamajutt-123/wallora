@@ -20,8 +20,8 @@ jobs:
     steps:
       - name: Trigger SEO copy enrichment
         run: |
+          set -e
           curl -sS -f --retry 2 --retry-delay 20 --max-time 240 \
             -H "Authorization: Bearer ${{ secrets.WALLORA_CRON_SECRET }}" \
             -H "User-Agent: github-actions-wallora" \
-            "${{ secrets.WALLORA_SITE_URL }}/api/cron/seo-copy" \
-            || echo "seo-copy failed — remaining walls wait for next run"
+            "${{ secrets.WALLORA_SITE_URL }}/api/cron/seo-copy"
