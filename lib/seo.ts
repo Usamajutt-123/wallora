@@ -10,6 +10,7 @@
  */
 
 import type { Wallpaper } from './types';
+import { canonicalCategoryName } from './categories';
 import { isLegacyWallpaperDescription, uniqueWallpaperDescription } from './wallpaper-copy';
 
 const SHORT: Record<string, string> = { nexwall: 'nx', wallhaven: 'wh', animepixels: 'ap', manual: 'mn', demo: 'dm' };
@@ -71,6 +72,9 @@ const DEVICE_KWS: Record<string, string[]> = {
   'Fantasy Worlds': ['fantasy art fans', 'dnd inspiration', 'mythical themes'],
   Anime: ['anime fans', 'otaku aesthetic', 'manga lovers'],
   Nature: ['nature scenery', 'desktop refresh', 'travel inspiration'],
+  // Canonical spellings resolve to the same keyword sets as their aliases.
+  'Anime & Manga': ['anime fans', 'otaku aesthetic', 'manga lovers'],
+  'Nature & Landscapes': ['nature scenery', 'desktop refresh', 'travel inspiration'],
 };
 
 function kwList(words: (string | null | undefined)[]): string[] {
@@ -82,7 +86,53 @@ function cutAt(s: string, max: number): string {
   if (s.length <= max) return s;
   const cut = s.slice(0, max);
   const lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut).replace(/[\s—–-]+$/, '');
+  return (lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut).replace(/[\s—–\-&,;:·|]+$/, '');
+}
+
+/**
+ * Title budget for the wallpaper `<title>`.
+ * The root layout appends the brand suffix " · WALLORA" (10 chars) via its
+ * title template, so 50 here guarantees a rendered title of ≤ 60 chars.
+ */
+export const SEO_TITLE_BUDGET = 50;
+
+/** Quality tokens that may already appear inside a wallpaper title. */
+const QUALITY_TOKEN = /\b(8k|4k|uhd|5k|qhd|fhd|hd|1080p|1440p|2160p)\b/i;
+
+/**
+ * Clean a stored (AI/manual) seo_title: spammy legacy rows repeated the
+ * keyword ("Naruto · Naruto Wallpaper - HD Anime &…") and already contained
+ * brand separators, which then duplicated the layout's own "· WALLORA".
+ * Keep the longest segment, drop brand mentions, collapse doubled words.
+ */
+function sanitizeStoredTitle(raw: string): string {
+  let t = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  const segments = t.split(/[·|]/).map((s) => s.trim()).filter(Boolean);
+  if (segments.length > 1) {
+    t = segments.sort((a, b) => b.length - a.length)[0];
+  }
+  t = t.replace(/\bwallora\b/gi, '').replace(/\s{2,}/g, ' ').trim();
+  t = t.replace(/\b(\w+)(\s+\1\b)+/gi, '$1'); // "Naruto Naruto" → "Naruto"
+  return t.replace(/[\s—–\-&,;:·|]+$/, '').trim();
+}
+
+/**
+ * Compose a fresh title with NO duplication:
+ *   `${Title} Wallpaper ${4K|HD} – ${Category}`
+ * Parts already present in the stored title (case-insensitive) are skipped,
+ * so "Naruto Wallpaper" never becomes "Naruto Wallpaper Wallpaper".
+ */
+function composeTitle(baseTitle: string, qualityShort: string, cat: string): string {
+  const base = baseTitle.replace(/\s+/g, ' ').trim().slice(0, 140) || 'Wallpaper';
+  const lower = base.toLowerCase();
+  const needsWallpaperWord = !/\bwallpapers?\b/i.test(base);
+  const needsQuality = !!qualityShort && !QUALITY_TOKEN.test(base);
+  const needsCat = cat.length > 1 && !lower.includes(cat.toLowerCase());
+  return cutAt(
+    `${base}${needsWallpaperWord ? ' Wallpaper' : ''}${needsQuality ? ` ${qualityShort}` : ''}${needsCat ? ` – ${cat}` : ''}`,
+    SEO_TITLE_BUDGET,
+  );
 }
 
 export interface SeoCopy {
@@ -100,15 +150,19 @@ export function seoFor(w: Wallpaper): SeoCopy {
   const is4kPlus = longSide >= 3840 && shortSide >= 2160;
   const isHd = longSide >= 1280 && shortSide >= 720;
   const quality = is4kPlus ? '4K UHD' : isHd ? 'HD' : '';
-  const cat = w.category ?? 'Aesthetic';
+  const qualityShort = is4kPlus ? '4K' : isHd ? 'HD' : '';
+  const cat = canonicalCategoryName(w.category) ?? 'Aesthetic';
   const tags = (w.tags ?? '').split(/[,|]/).map((t) => t.trim()).filter(Boolean).slice(0, 3);
   const customDescription = w.seo_description?.trim();
 
-  const title = cutAt(w.seo_title?.trim() || `${w.title} - ${quality ? `${quality} ` : ''}${cat} Wallpaper`, 60);
+  const storedTitle = sanitizeStoredTitle(w.seo_title ?? '');
+  const title = storedTitle
+    ? cutAt(storedTitle, SEO_TITLE_BUDGET)
+    : composeTitle(w.title, qualityShort, cat);
   const description = cutAt(
     customDescription && !isLegacyWallpaperDescription(customDescription)
       ? customDescription
-      : uniqueWallpaperDescription(w),
+      : uniqueWallpaperDescription({ ...w, category: cat }),
     160,
   );
 

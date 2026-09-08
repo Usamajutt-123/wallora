@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import LegalPage from '@/components/LegalPage';
 import { SITE } from '@/lib/product';
+import { siteUrl } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'DMCA & Copyright',
   description: 'How to submit a copyright removal request to Wallora.',
+  alternates: { canonical: siteUrl('/dmca') },
 };
 
 export default function DmcaPage() {

@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import LegalPage from '@/components/LegalPage';
+import { siteUrl } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'About Wallora',
   description:
     'Wallora is a modern wallpaper discovery platform built for people who want better-looking screens — fast search, curated categories and high-quality wallpapers.',
+  alternates: { canonical: siteUrl('/about') },
 };
 
 export default function AboutPage() {

@@ -127,9 +127,9 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
             <p className="text-[11px] font-display font-semibold tracking-[0.35em] text-accent2 uppercase">Gallery</p>
             <h2 className="mt-2 font-display font-bold text-2xl sm:text-3xl tracking-tight">More from this post</h2>
             <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {gallery.map((url) => (
+              {gallery.map((url, i) => (
                 <a key={url} href={url} target="_blank" rel="nofollow noopener noreferrer" className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.03]">
-                  <img src={imgUrl(url)} alt="" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover transition duration-500 group-hover:scale-105" />
+                  <img src={imgUrl(url)} alt={`${post.title} — gallery image ${i + 1}`} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover transition duration-500 group-hover:scale-105" />
                 </a>
               ))}
             </div>

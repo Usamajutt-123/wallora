@@ -1,6 +1,6 @@
 import type { Wallpaper } from '@/lib/types';
 import { imgSrcSet } from '@/lib/img';
-import { wallHref } from '@/lib/seo';
+import { seoFor, wallHref } from '@/lib/seo';
 
 const SPANS = [
   'md:col-span-2 md:row-span-2',
@@ -32,7 +32,7 @@ export default function BentoFeatured({ items }: { items: Wallpaper[] }) {
             src={src}
             srcSet={srcSet}
             sizes={sizes}
-            alt={w.title}
+            alt={seoFor(w).alt}
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"

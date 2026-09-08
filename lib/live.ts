@@ -13,6 +13,7 @@ import {
 import { fetchAnimeCategories, fetchAnimePixels } from './animepixels';
 import { fetchWallhavenById, fetchWallhavenSearch, shelfBySlug, withShelf, WH_SHELVES } from './wallhaven';
 import { filterCategories, filterWallpapers, isExcludedCategory, isHardBlockedWallpaper } from './filters';
+import { canonicalCategoryName } from './categories';
 import { isSupabaseConfigured } from './supabase';
 import type { Category, Paged, SortMode, Wallpaper } from './types';
 import fs from 'node:fs';
@@ -164,7 +165,11 @@ const _whFeed = unstable_cache(
 /** Persisted NexWall category snapshot — survives daily-quota outages (auto-refreshed when alive). */
 const CATS_SNAPSHOT = path.join(process.cwd(), 'content', 'cats-snapshot.json');
 function readCatSnapshot(): Category[] {
-  try { return JSON.parse(fs.readFileSync(CATS_SNAPSHOT, 'utf8')); } catch { return []; }
+  try {
+    const cats = JSON.parse(fs.readFileSync(CATS_SNAPSHOT, 'utf8')) as Category[];
+    // Snapshots written before the category merge may hold legacy spellings.
+    return cats.map((c) => ({ ...c, name: canonicalCategoryName(c.name) ?? c.name }));
+  } catch { return []; }
 }
 function writeCatSnapshot(cats: Category[]) {
   try { fs.mkdirSync(path.dirname(CATS_SNAPSHOT), { recursive: true }); fs.writeFileSync(CATS_SNAPSHOT, JSON.stringify(cats, null, 1)); } catch {/* dev-only nicety */}
@@ -181,7 +186,9 @@ const _cats = unstable_cache(
         .map((c) => ({
           id: `nexwall:${c.source_id}`,
           slug: c.slug,
-          name: c.name,
+          // Display the canonical spelling ("nature" → "Nature & Landscapes");
+          // walls are fetched by numeric id so the rename is lookup-safe.
+          name: canonicalCategoryName(c.name) ?? c.name,
           cover_url: c.cover_url,
           wallpaper_count: c.wallpaper_count,
           is_premium: c.is_premium,
@@ -211,8 +218,8 @@ const _cats = unstable_cache(
         }));
         const all: Category = {
           id: 'animepixels:__all',
-          slug: 'anime',
-          name: 'Anime',
+          slug: 'anime-manga',
+          name: 'Anime & Manga',
           cover_url:
             apCats[0]?.cover ??
             (await _apFeed(1, 1, '').then((r) => r.data[0]?.thumb_url).catch(() => null)) ??
@@ -303,10 +310,16 @@ export async function liveWallpapers(q: LiveQuery): Promise<Paged<Wallpaper>> {
   if (q.category) {
     if (isExcludedCategory(q.category)) return { data: [], page, lastPage: 1, total: 0 };
     const cats = await _cats();
-    // tolerate URL slugs too ("anime", "demon-slayer"…)
-    const needle = q.category.toLowerCase().replace(/[-_]+/g, ' ');
+    // Canonical spelling first ("anime" → "Anime & Manga"), tolerating URL
+    // slugs too ("anime-manga", "demon-slayer"…).
+    const want = canonicalCategoryName(q.category) ?? q.category;
+    const needle = want.toLowerCase().replace(/[-_]+/g, ' ');
     const cat = cats.find(
-      (c) => c.name === q.category || c.name.toLowerCase() === needle || c.slug === needle.replace(/ /g, '-'),
+      (c) =>
+        c.name === q.category ||
+        c.name === want ||
+        c.name.toLowerCase() === needle ||
+        c.slug === needle.replace(/ /g, '-'),
     );
     if (!cat) {
       // not on any shelf — try AnimePixels franchise…
@@ -323,7 +336,9 @@ export async function liveWallpapers(q: LiveQuery): Promise<Paged<Wallpaper>> {
         return { data: [], page, lastPage: 1, total: 0 };
       }
     }
-    if (cat.source === 'animepixels') return _apFeed(page, perPage, cat.name === 'Anime' ? '' : cat.name);
+    // The umbrella shelf (id …:__all, "Anime & Manga") resolves to the full
+    // AnimePixels library; franchise shelves filter by their own name.
+    if (cat.source === 'animepixels') return _apFeed(page, perPage, cat.id.endsWith(':__all') ? '' : cat.name);
     if (cat.source === 'wallhaven') return _whFeed(cat.slug, page, perPage);
     try {
       return await _catFeed(cat.id.split(':')[1], page, perPage);
@@ -365,7 +380,7 @@ export async function liveRelated(w: Wallpaper, limit = 8): Promise<Wallpaper[]>
   if (!w.category) return [];
   // AnimePixels items → same franchise via its category param (even if not on the shelf)
   if (w.source === 'animepixels') {
-    const r = await _apFeed(1, limit + 1, w.category === 'Anime' ? '' : w.category);
+    const r = await _apFeed(1, limit + 1, canonicalCategoryName(w.category) === 'Anime & Manga' ? '' : (w.category ?? ''));
     const items = r.data.filter((x) => x.id !== w.id);
     if (items.length) return items.slice(0, limit);
   }

@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import LegalPage from '@/components/LegalPage';
+import { siteUrl } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'Disclaimer',
   description: 'Disclaimer for the Wallora wallpaper discovery platform.',
+  alternates: { canonical: siteUrl('/disclaimer') },
 };
 
 export default function DisclaimerPage() {

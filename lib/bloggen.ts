@@ -9,13 +9,14 @@
  */
 
 import { getServiceSupabase } from './supabase';
+import { canonicalCategoryName } from './categories';
 import { isHardBlockedWallpaper } from './filters';
 
 const KEY = process.env.GEMINI_API_KEY || '';
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 
 const CATEGORY_BANK = [
-  'Anime', 'Gaming', 'Space & Cosmos', 'AMOLED & Dark',
+  'Anime & Manga', 'Gaming', 'Space & Cosmos', 'AMOLED & Dark',
   'Cyberpunk City', 'Fantasy Worlds', 'Nature & Landscapes',
 ];
 
@@ -51,7 +52,7 @@ TOPIC: "${topic.replace('{year}', String(year))}"
 
 HARD REQUIREMENTS:
 1. Output STRICT JSON only, no markdown fences:
-{"title": "≤60 chars, front-load main keyword", "description": "≤160 chars, benefit-led meta description", "keywords": "8-12 comma-separated LONG-TAIL phrases", "category": "<one of: Anime|Gaming|Space & Cosmos|AMOLED & Dark|Cyberpunk City|Fantasy Worlds|Nature>", "markdown": "…the full post…"}
+{"title": "≤60 chars, front-load main keyword", "description": "≤160 chars, benefit-led meta description", "keywords": "8-12 comma-separated LONG-TAIL phrases", "category": "<one of: Anime & Manga|Gaming|Space & Cosmos|AMOLED & Dark|Cyberpunk City|Fantasy Worlds|Nature & Landscapes>", "markdown": "…the full post…"}
 
 2. In "markdown":
    - 700–1100 words, friendly expert tone, NO fluff intro like "In today's digital world".
@@ -78,14 +79,15 @@ interface GeminiPost {
   markdown: string;
 }
 
-const OUTPUT_CATEGORIES = new Set(['Anime', 'Gaming', 'Space & Cosmos', 'AMOLED & Dark', 'Cyberpunk City', 'Fantasy Worlds', 'Nature']);
+const OUTPUT_CATEGORIES = new Set(['Anime & Manga', 'Gaming', 'Space & Cosmos', 'AMOLED & Dark', 'Cyberpunk City', 'Fantasy Worlds', 'Nature & Landscapes']);
 
 function validatePost(value: unknown): GeminiPost {
   const post = value as Partial<GeminiPost> | null;
   const title = String(post?.title ?? '').replace(/\s+/g, ' ').trim();
   const description = String(post?.description ?? '').replace(/\s+/g, ' ').trim();
   const keywords = String(post?.keywords ?? '').replace(/\s+/g, ' ').trim();
-  const category = String(post?.category ?? '').trim();
+  // Accept legacy spellings ("Anime", "nature") and store the canonical name.
+  const category = canonicalCategoryName(String(post?.category ?? '').trim()) ?? '';
   const markdown = String(post?.markdown ?? '').trim();
   const words = markdown ? markdown.split(/\s+/).filter(Boolean).length : 0;
   const keywordCount = keywords.split(',').map((word) => word.trim()).filter(Boolean).length;

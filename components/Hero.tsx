@@ -1,5 +1,6 @@
 import type { Wallpaper } from '@/lib/types';
 import { imgSrcSet } from '@/lib/img';
+import { seoFor } from '@/lib/seo';
 import { fmt } from '@/lib/utils';
 import type { SiteStats } from '@/lib/db';
 
@@ -37,7 +38,13 @@ export default function Hero({ tiles, stats }: { tiles: Wallpaper[]; stats: Site
                 animationDirection: i % 2 ? 'reverse' : 'normal',
               }}
             >
-              {[...col, ...col, ...col, ...col].map((t, j) => {
+              {/* Two copies are all a -50% marquee loop needs (the second copy
+                  sits exactly where the first was at loop point), so the old
+                  4× duplication — 60 near-identical <img> tags — is halved.
+                  Every tile keeps a descriptive alt for Google Images; the
+                  aria-hidden wrapper (above) still hides the duplicated mosaic
+                  from screen readers, which is the correct a11y treatment. */}
+              {[...col, ...col].map((t, j) => {
                 const { src, srcSet, sizes, candidates } = imgSrcSet(t.thumb_url, { sizes: HERO_SIZES });
                 // Only the three columns visible in the first mobile row are
                 // eager/high priority. React 19 preloads eager images, so the
@@ -52,7 +59,7 @@ export default function Hero({ tiles, stats }: { tiles: Wallpaper[]; stats: Site
                     src={eager ? mobileSrc : src}
                     srcSet={srcSet}
                     sizes={sizes}
-                    alt=""
+                    alt={seoFor(t).alt}
                     loading={eager ? 'eager' : 'lazy'}
                     fetchPriority={eager ? 'high' : undefined}
                     decoding="async"

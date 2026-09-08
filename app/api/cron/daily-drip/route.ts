@@ -3,6 +3,7 @@ import { fetchNexwallWallpapers, nexwallConfigured } from '@/lib/nexwall';
 import { fetchAnimePixels } from '@/lib/animepixels';
 import { fetchWallhavenSearch, withShelf, WH_SHELVES } from '@/lib/wallhaven';
 import { filterWallpapers } from '@/lib/filters';
+import { canonicalCategoryName } from '@/lib/categories';
 import { mirrorWallsToImgBB, mirrorConfigured } from '@/lib/imgbb';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -78,6 +79,8 @@ export async function GET(req: NextRequest) {
       if (fresh.length >= cap) break;
       const sourceId = String(w.source_id ?? '');
       if (!/^[A-Za-z0-9_-]{1,100}$/.test(sourceId) || w.source !== source || seen.has(sourceId)) continue;
+      // Store the canonical spelling so the drip never reintroduces merged shelves.
+      w.category = canonicalCategoryName(w.category as string | null) ?? (w.category as string | null);
       fresh.push(w);
       seen.add(sourceId);
     }

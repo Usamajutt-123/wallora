@@ -110,13 +110,26 @@ export function uniqueWallpaperDescription(w: WallpaperCopyInput, max = 158): st
         `Preview the full image before setting it on your screen.`,
       ];
 
-  const opening = openings[seed % openings.length];
+  // Tag-less rows derive `details` from the category name, so openings that ALSO
+  // name the category would repeat it ("take on X art, shaped by X styling").
+  // Those rows draw from the category-free openings only — still
+  // deterministic, still factual, no duplication.
+  const pool = tags.length === 0
+    ? openings.filter((o) => !o.replace(details, '').toLowerCase().includes(category.toLowerCase()))
+    : openings;
+  const safePool = pool.length ? pool : openings; // paranoia: never divide by zero
+  const opening = safePool[seed % safePool.length];
   const ending = endings[Math.floor(seed / openings.length) % endings.length];
   const rawId = clean(w.source_id, String(seed)).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 100) || String(seed);
   // The full bounded source id makes the catalog reference unique even when
   // two long ids happen to share the same prefix, suffix and length.
   const reference = `Catalog ref ${clean(w.source, 'wall').slice(0, 4).toUpperCase()}-${rawId}.`;
-  const body = sentenceCut(`${opening} ${ending}`, Math.max(24, max - reference.length - 1));
+  const budget = Math.max(24, max - reference.length - 1);
+  // Never clip mid-sentence ("…it is an."): when opening + ending overflow the
+  // budget, the opening alone — always a complete sentence — wins over a
+  // truncated two-sentence body.
+  const both = `${opening} ${ending}`;
+  const body = both.length <= budget ? sentenceCut(both, budget) : opening.length <= budget ? opening : sentenceCut(opening, budget);
   return `${body} ${reference}`;
 }
 

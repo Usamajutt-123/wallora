@@ -42,7 +42,7 @@ function normalize(w: ApItem): NormalizedWall | null {
   if (!Number.isSafeInteger(id) || id <= 0 || !w?.url) return null;
   const image = trustedAnimeImage(w.url);
   if (!image) return null;
-  const cat = String(w.category ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Anime';
+  const cat = String(w.category ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Anime & Manga';
   const title = String(w.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 140) || cat;
   const widthValue = Math.round(Number(w.width));
   const heightValue = Math.round(Number(w.height));

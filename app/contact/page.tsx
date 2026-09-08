@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SITE } from '@/lib/product';
+import { siteUrl } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'Contact Wallora',
   description: 'Questions, issues or reports — how to reach the Wallora team.',
+  alternates: { canonical: siteUrl('/contact') },
 };
 
 const MAIL = (email: string, label: string, hint: string) => ({ email, label, hint });
