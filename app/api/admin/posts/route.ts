@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardBlockedWallpaper } from '@/lib/filters';
+import { canonicalCategoryName } from '@/lib/categories';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,7 +89,7 @@ function postPayload(body: Record<string, unknown>) {
   const slug = slugify(line(body.slug, 100) || title);
   const description = line(body.description, 170);
   const content_markdown = block(body.content_markdown, 200_000);
-  const category = line(body.category, 80) || null;
+  const category = canonicalCategoryName(line(body.category, 80));
   const keywords = line(body.keywords, 500) || null;
   const rawCover = line(body.cover_url, 2048);
   const cover_url = optionalHttps(rawCover);

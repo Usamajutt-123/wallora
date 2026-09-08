@@ -24,6 +24,7 @@ export const revalidate = 300;
 // Absolute canonical via the shared site-URL convention, same as /wallpaper/[id].
 export const metadata: Metadata = {
   alternates: { canonical: siteUrl('/') },
+  openGraph: { url: siteUrl('/') },
 };
 
 /** WebSite JSON-LD — same render style as the detail page's structured data. */

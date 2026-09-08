@@ -49,7 +49,7 @@ export default async function BlogIndex() {
                   <div className={`relative overflow-hidden ${i === 0 ? 'h-44 sm:h-52' : 'h-40'}`}>
                     <img
                       src={imgUrl(cover)}
-                      alt=""
+                      alt={p.title}
                       className="w-full h-full object-cover transition duration-500 group-hover:scale-105"
                       loading={i < 2 ? 'eager' : 'lazy'}
                     />

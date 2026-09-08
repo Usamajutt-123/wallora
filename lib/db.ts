@@ -1,4 +1,5 @@
 import { DEMO_WALLPAPERS, DEMO_CATEGORIES } from './demo-data';
+import { canonicalCategoryName, categoryStoredValues } from './categories';
 import { getAnonSupabase, getServiceSupabase, isSupabaseConfigured, serviceKeyConfigured } from './supabase';
 import { nexwallConfigured } from './nexwall';
 import { filterCategories, filterWallpapers, isHardBlockedWallpaper } from './filters';
@@ -81,7 +82,10 @@ function rowToCategory(r: any): Category {
 function demoFeed(q: FeedQuery): Paged<Wallpaper> {
   const perPage = q.perPage ?? PER_PAGE;
   let list = [...DEMO_WALLPAPERS];
-  if (q.category) list = list.filter((w) => w.category === q.category);
+  if (q.category) {
+    const want = canonicalCategoryName(q.category);
+    list = list.filter((w) => canonicalCategoryName(w.category) === want);
+  }
   if (q.search) {
     const s = q.search.toLowerCase();
     list = list.filter((w) => (w.title + ' ' + w.category).toLowerCase().includes(s));
@@ -107,9 +111,9 @@ export interface FeedQuery {
 
 /**
  * Some categories in the UI are SOURCE umbrella rows (source_id = '__all',
- * e.g. AnimePixels' "Anime" shelf). Walls are stored under their real
+ * e.g. AnimePixels' "Anime & Manga" shelf). Walls are stored under their real
  * sub-category (a franchise name like "Demon Slayer"), never under the
- * umbrella label — so an exact `category = 'Anime'` filter used to return
+ * umbrella label — so an exact `category = 'Anime & Manga'` filter used to return
  * zero rows even when the library is full. For those rows we instead show
  * every wallpaper from that source. (Audit fix.)
  */
@@ -118,11 +122,15 @@ async function umbrellaSourceFor(
   category: string | null | undefined,
 ): Promise<string | null> {
   if (!category) return null;
+  // Try the canonical name AND legacy spellings, so the umbrella resolves
+  // identically before and after the category-merge SQL migration.
+  const names = categoryStoredValues(category);
+  if (!names.length) return null;
   try {
     const { data } = await sb
       .from('categories')
       .select('source')
-      .eq('name', category)
+      .in('name', names)
       .eq('source_id', '__all')
       .maybeSingle();
     const source = data?.source;
@@ -138,13 +146,17 @@ async function supabaseFeed(q: FeedQuery): Promise<Paged<Wallpaper>> {
   let page = Math.max(1, Math.floor(q.page ?? 1));
   const safeSearch = (q.search ?? '').replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
   const hasSearch = safeSearch.length >= 2;
+  // Canonical category + its legacy spellings: one merged result set whether
+  // the visitor (or a stored row) uses the old or the new spelling.
+  const categoryValues = q.category ? categoryStoredValues(q.category) : [];
+  const wantCategory = categoryValues.length > 0;
   // Umbrella category → filter by SOURCE instead of exact category text.
-  const umbrellaSource = q.category ? await umbrellaSourceFor(sb, q.category) : null;
+  const umbrellaSource = wantCategory ? await umbrellaSourceFor(sb, q.category) : null;
   const applyCategory = <T,>(qb: T): T =>
     umbrellaSource
       ? (qb as any).eq('source', umbrellaSource) as T
-      : q.category
-        ? (qb as any).eq('category', q.category) as T
+      : wantCategory
+        ? (qb as any).in('category', categoryValues) as T
         : qb;
 
   if (q.sort === 'random') {
@@ -288,16 +300,19 @@ async function getCategoriesRawUncached(): Promise<Category[]> {
         start += pageSize;
       }
 
+      // Group by CANONICAL name so legacy spellings ("nature", "Anime") merge
+      // with their canonical shelves and counts sum instead of splitting.
       const group = new Map<string, { name: string; source: string; count: number; cover: string | null }>();
       const sourceTotal = new Map<string, number>();
       for (const f of facts) {
-        const key = `${f.source}::${f.category}`;
+        const name = canonicalCategoryName(f.category) ?? f.category;
+        const key = name;
         const cur = group.get(key);
         if (cur) {
           cur.count++;
           if (!cur.cover && f.cover) cur.cover = f.cover;
         } else {
-          group.set(key, { name: f.category, source: f.source, count: 1, cover: f.cover });
+          group.set(key, { name, source: f.source, count: 1, cover: f.cover });
         }
         sourceTotal.set(f.source, (sourceTotal.get(f.source) ?? 0) + 1);
       }
@@ -315,29 +330,43 @@ async function getCategoriesRawUncached(): Promise<Category[]> {
         });
       }
 
-      // Re-add source umbrella shelves (e.g. AnimePixels → "Anime") that exist
-      // in the categories table when that source actually has stored walls.
+      // Re-add source umbrella shelves (e.g. AnimePixels → "Anime & Manga")
+      // that exist in the categories table when that source actually has
+      // stored walls. Umbrella counts OVERLAP exact-row groups (every
+      // franchise row is also inside the source total), so they merge by MAX,
+      // never by sum — otherwise the card would double-count.
       try {
         const { data: umbrellas } = await sb
           .from('categories')
           .select('source, source_id, name, slug, cover_url')
           .eq('source_id', '__all')
           .in('source', [...STORED_SOURCE_LIST]);
+        const byName = new Map(cats.map((c) => [c.name, c]));
         for (const u of umbrellas ?? []) {
           const total = sourceTotal.get(String(u.source)) ?? 0;
           if (!total) continue;
-          const firstGroup = [...group.values()].find((g) => g.source === u.source && g.cover)?.cover;
-          const name = String(u.name ?? '');
+          const rawName = String(u.name ?? '');
+          const name = canonicalCategoryName(rawName);
           if (!name) continue;
-          cats.push({
-            id: `${u.source}:${u.source_id}`,
-            slug: String(u.slug || categorySlug(name)),
-            name,
-            cover_url: u.cover_url || firstGroup || null,
-            wallpaper_count: total,
-            is_premium: false,
-            source: String(u.source),
-          });
+          const firstGroup = [...group.values()].find((g) => g.source === u.source && g.cover)?.cover;
+          const cover = u.cover_url || firstGroup || null;
+          const prev = byName.get(name);
+          if (prev) {
+            if (total > prev.wallpaper_count) prev.wallpaper_count = total;
+            if (!prev.cover_url && cover) prev.cover_url = cover;
+          } else {
+            const entry: Category = {
+              id: `${u.source}:${u.source_id}`,
+              slug: String(u.slug || categorySlug(name)),
+              name,
+              cover_url: typeof cover === 'string' ? cover : null,
+              wallpaper_count: total,
+              is_premium: false,
+              source: String(u.source),
+            };
+            cats.push(entry);
+            byName.set(name, entry);
+          }
         }
       } catch {
         /* umbrella shelves optional */
@@ -358,7 +387,21 @@ async function getCategoriesRawUncached(): Promise<Category[]> {
     console.error('categories error:', e);
     if (mode === 'supabase') return [];
   }
-  return filterCategories(DEMO_CATEGORIES);
+  // Demo shelves go through the same canonical merge as stored ones, so local
+  // builds render exactly what production shows ("Nature" → "Nature &
+  // Landscapes"). Counts sum; the first cover wins.
+  const merged = new Map<string, Category>();
+  for (const c of DEMO_CATEGORIES) {
+    const name = canonicalCategoryName(c.name) ?? c.name;
+    const prev = merged.get(name);
+    if (prev) {
+      prev.wallpaper_count += c.wallpaper_count;
+      if (!prev.cover_url && c.cover_url) prev.cover_url = c.cover_url;
+    } else {
+      merged.set(name, { ...c, name, slug: categorySlug(name) });
+    }
+  }
+  return filterCategories([...merged.values()]).sort((a, b) => b.wallpaper_count - a.wallpaper_count);
 }
 
 /* ── Server-side memoization for the category aggregation ────────────────────

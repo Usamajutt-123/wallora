@@ -68,7 +68,7 @@ export default async function CategoriesPage() {
                   src={mobileSrc}
                   srcSet={srcSet}
                   sizes={sizes}
-                  alt={c.name}
+                  alt={`${c.name} wallpapers`}
                   loading="eager"
                   fetchPriority="high"
                   decoding="async"
@@ -80,7 +80,7 @@ export default async function CategoriesPage() {
                   data-lazy-src={src}
                   data-lazy-srcset={srcSet}
                   data-lazy-sizes={sizes}
-                  alt={c.name}
+                  alt={`${c.name} wallpapers`}
                   loading="lazy"
                   decoding="async"
                   style={{ opacity: 0 }}

@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Don't advertise the framework in the `x-powered-by` response header.
+  poweredByHeader: false,
   // Sandboxed preview iframes must be able to reach /_next HMR and dev
   // resources during local testing. Dev-only — ignored in production.
   allowedDevOrigins: ['*.e2b.app', '*.arena.site'],
@@ -28,7 +30,7 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'no-referrer' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'Content-Security-Policy', value: "object-src 'none'; base-uri 'self'; form-action 'self'" },
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
         ],
       },

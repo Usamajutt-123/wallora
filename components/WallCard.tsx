@@ -1,6 +1,6 @@
 import type { Wallpaper } from '@/lib/types';
 import { imgSrcSet } from '@/lib/img';
-import { wallHref } from '@/lib/seo';
+import { seoFor, wallHref } from '@/lib/seo';
 import { sourceLabel } from '@/lib/labels';
 import { fmt } from '@/lib/utils';
 
@@ -37,7 +37,9 @@ export default function WallCard({ w }: { w: Wallpaper }) {
         src={src}
         srcSet={srcSet}
         sizes={sizes}
-        alt={w.title}
+        // Descriptive alt for Google Images ("Title — 4K UHD Category wallpaper
+        // in 3840x2160"); honors a curator/AI-written seo_alt when present.
+        alt={seoFor(w).alt}
         loading="lazy"
         decoding="async"
         width={w.width || 800}

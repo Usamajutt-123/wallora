@@ -102,7 +102,7 @@ FACTS I KNOW about this image (ONLY these are guaranteed true):
 
 MANDATORY RULES:
 - Describe ONLY the subject named in the Title and Tags above. If Tags are "(none)" you must NOT name any object, character, scene, colour or setting — stay general about the category and the resolution/screen use.
-- seo_title: a natural phrase a person types into Google, <=55 characters, lead with the strongest real keyword, do not just repeat boilerplate such as "Wallpaper 3840x2160".
+- seo_title: a natural phrase a person types into Google, <=50 characters, lead with the strongest real keyword, do not just repeat boilerplate such as "Wallpaper 3840x2160". Never include the site or brand name (the page appends branding automatically) and never repeat any word — each keyword exactly once.
 - seo_description: ONE natural human sentence of 145-158 characters, unique to this wallpaper, subject + resolution + which screen it suits. Never start with "Explore", never write "Catalog ref", no template phrases.
 - seo_keywords: 6-10 comma-separated long-tail phrases people actually search, mixing the real subject, the category label, the resolution and the screen use.
 - seo_alt: <=110 characters of plain visual alt text (visual only when tags give facts).
@@ -133,7 +133,8 @@ function validCopy(raw: Record<string, string>): { seo_title: string; seo_descri
     .map((k) => clean(k))
     .filter(Boolean);
   const keywords = keywordPhrases.slice(0, 12).join(', ').slice(0, 500);
-  if (title.length < 8 || title.length > 70) return null;
+  if (title.length < 8 || title.length > 55) return null;
+  if (/\bwallora\b/i.test(title) || /[·|]/.test(title)) return null; // brand/keyword-stuffed titles are rejected, never stored
   if (description.length < 60 || description.length > 180) return null;
   if (keywordPhrases.length < 4) return null;
   if (alt.length < 5) return null;

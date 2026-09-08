@@ -3,6 +3,8 @@ import LoadMore from '@/components/LoadMore';
 import { getAdsConfig } from '@/lib/ads';
 import AdSlot from '@/components/ads/AdSlot';
 import { getCategories, getWallpapers } from '@/lib/db';
+import { canonicalCategoryName } from '@/lib/categories';
+import { siteUrl } from '@/lib/seo';
 import type { SortMode } from '@/lib/types';
 import { cn, fmt } from '@/lib/utils';
 import type { Metadata } from 'next';
@@ -17,13 +19,15 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const params = await searchParams;
   const query = params.q?.replace(/\s+/g, ' ').trim().slice(0, 60);
-  const category = params.category?.replace(/\s+/g, ' ').trim().slice(0, 60);
+  // Legacy spellings 301 in middleware, but the canonical tag always uses the
+  // canonical name as a belt-and-suspenders duplicate-content guard.
+  const category = canonicalCategoryName(params.category?.replace(/\s+/g, ' ').trim().slice(0, 60));
   if (query) return { title: `“${query}”`, robots: { index: false, follow: true } };
   if (category && !isExcludedCategory(category)) {
     return {
       title: `${category} Wallpapers`,
       description: `Explore high-resolution ${category} wallpapers available through the WALLORA catalog.`,
-      alternates: { canonical: `/search?category=${encodeURIComponent(category)}` },
+      alternates: { canonical: siteUrl(`/search?category=${encodeURIComponent(category)}`) },
     };
   }
   return { title: 'Search', robots: { index: false, follow: true } };
@@ -39,7 +43,7 @@ export default async function SearchPage({
   const params = await searchParams;
   const queryInput = params.q?.replace(/\s+/g, ' ').trim().slice(0, 120) || '';
   const q = queryInput.length >= 2 ? queryInput : undefined;
-  const category = params.category?.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined;
+  const category = canonicalCategoryName(params.category?.replace(/\s+/g, ' ').trim().slice(0, 80)) || undefined;
   const sort: SortMode = params.sort === 'popular' || params.sort === 'random' ? params.sort : 'newest';
 
   const [feed, ads, categories] = await Promise.all([

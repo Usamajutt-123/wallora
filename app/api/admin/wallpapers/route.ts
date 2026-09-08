@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash, randomUUID } from 'node:crypto';
 import { isHardBlockedWallpaper } from '@/lib/filters';
+import { canonicalCategoryName } from '@/lib/categories';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,9 @@ function httpsUrl(value: unknown, required = false): string | null {
 
 function editablePayload(body: Record<string, unknown>) {
   const title = text(body.title, 140);
-  const category = text(body.category, 80);
+  // Manual entries are stored under the canonical spelling so curators can
+  // never recreate a merged duplicate shelf ("Anime" → "Anime & Manga").
+  const category = canonicalCategoryName(text(body.category, 80)) ?? '';
   const description = longText(body.description ?? body.seo_description, 300).replace(/\s+/g, ' ');
   const image_url = httpsUrl(body.image_url, true);
   const thumbInput = text(body.thumb_url, 2048);

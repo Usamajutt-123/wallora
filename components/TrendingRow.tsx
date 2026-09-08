@@ -1,6 +1,6 @@
 import type { Wallpaper } from '@/lib/types';
 import { imgSrcSet } from '@/lib/img';
-import { wallHref } from '@/lib/seo';
+import { seoFor, wallHref } from '@/lib/seo';
 import { fmt } from '@/lib/utils';
 
 /** Fixed-width cards: w-44 (176 px) on phones, w-52 (208 px) on sm+. */
@@ -27,7 +27,7 @@ export default function TrendingRow({ items }: { items: Wallpaper[] }) {
               src={src}
               srcSet={srcSet}
               sizes={sizes}
-              alt={w.title}
+              alt={seoFor(w).alt}
               loading="lazy"
               decoding="async"
               className="h-full w-full object-cover transition duration-700 group-hover:scale-110"

@@ -27,13 +27,13 @@ export interface WallpaperEditorValue {
 }
 
 const CATEGORIES = [
-  'Anime',
+  'Anime & Manga',
   'Gaming',
   'Nature & Landscapes',
-  'Cars & Vehicles',
+  'Cars & Bikes',
   'Space & Cosmos',
   'AMOLED & Dark',
-  'Minimal',
+  'Minimalist',
   'Abstract & 3D',
   'Cyberpunk City',
   'Fantasy Worlds',

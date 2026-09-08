@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { marked, type RendererObject } from 'marked';
 import { getAnonSupabase, isSupabaseConfigured } from './supabase';
+import { canonicalCategoryName, categoryStoredValues } from './categories';
 import { isHardBlockedWallpaper } from './filters';
 
 const POSTS_DIR = path.join(process.cwd(), 'content', 'posts');
@@ -302,16 +303,19 @@ export interface GuidePost {
 /** Latest PUBLISHED guide whose category matches the wallpaper's category.
  *  Wallpaper pages use it to link to the relevant blog (contextual internal
  *  link → helps the guide rank and reinforces the page's topical relevance).
- *  Only exact stored-category matches are returned; nothing is ever forced. */
+ *  Canonical + legacy spellings are all accepted, so the link survives the
+ *  category merge; nothing is ever forced. */
 async function sbGuidePost(category: string): Promise<GuidePost | null> {
   const sb = getAnonSupabase();
   if (!sb) return null;
+  const names = categoryStoredValues(category);
+  if (!names.length) return null;
   try {
     const { data, error } = await sb
       .from('posts')
       .select('slug,title,description,cover_url,published_at')
       .eq('status', 'published')
-      .eq('category', category)
+      .in('category', names)
       .order('published_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -332,8 +336,9 @@ async function sbGuidePost(category: string): Promise<GuidePost | null> {
 
 /** File fallback (demo/local): newest non-draft post of that category. */
 function fileGuidePost(category: string): GuidePost | null {
+  const want = canonicalCategoryName(category);
   const match = listFilePosts()
-    .filter((p) => p.category && p.category.trim().toLowerCase() === category.trim().toLowerCase())
+    .filter((p) => p.category && canonicalCategoryName(p.category) === want)
     .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
   if (!match) return null;
   return {

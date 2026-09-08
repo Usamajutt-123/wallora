@@ -2,10 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import LegalPage from '@/components/LegalPage';
 import { SITE } from '@/lib/product';
+import { siteUrl } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'Terms of Use',
   description: 'The terms that govern your use of the Wallora website.',
+  alternates: { canonical: siteUrl('/terms') },
 };
 
 export default function TermsPage() {

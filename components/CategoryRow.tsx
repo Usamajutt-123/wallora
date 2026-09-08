@@ -22,7 +22,7 @@ export default function CategoryRow({ categories }: { categories: Category[] }) 
               src={src}
               srcSet={srcSet}
               sizes={sizes}
-              alt={c.name}
+              alt={`${c.name} wallpapers`}
               loading="lazy"
               decoding="async"
               className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"

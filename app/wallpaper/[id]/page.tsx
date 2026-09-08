@@ -214,7 +214,7 @@ export default async function WallpaperPage({ params }: { params: Promise<{ id: 
             <div className="relative h-44 sm:h-full sm:min-h-[180px] overflow-hidden">
               <img
                 src={imgUrl(guide.cover_url)}
-                alt=""
+                alt={guide.title}
                 loading="lazy"
                 decoding="async"
                 className="absolute inset-0 w-full h-full object-cover transition duration-500 group-hover:scale-105"

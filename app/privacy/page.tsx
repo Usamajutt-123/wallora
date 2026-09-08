@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
 import LegalPage from '@/components/LegalPage';
 import { SITE } from '@/lib/product';
+import { siteUrl } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
   description:
     'What information Wallora may collect when you use the website and how that information may be used.',
+  alternates: { canonical: siteUrl('/privacy') },
 };
 
 export default function PrivacyPage() {

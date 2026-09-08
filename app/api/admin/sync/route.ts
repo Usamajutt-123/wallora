@@ -4,6 +4,7 @@ import { fetchNexwallCategories, fetchNexwallWallpapers, nexwallConfigured } fro
 import { fetchAnimePixels } from '@/lib/animepixels';
 import { fetchWallhavenSearch, withShelf, WH_SHELVES } from '@/lib/wallhaven';
 import { filterCategories, filterWallpapers } from '@/lib/filters';
+import { canonicalCategoryName } from '@/lib/categories';
 import { mirrorWallsToImgBB, mirrorConfigured } from '@/lib/imgbb';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
@@ -85,9 +86,14 @@ export async function POST(req: NextRequest) {
     return fresh.slice(0, count);
   };
 
+  // New rows are stored under the CANONICAL category spelling ("nature" →
+  // "Nature & Landscapes", "Anime" → "Anime & Manga") so syncs can never
+  // reintroduce the duplicate shelves the merge migration removed.
+  const canonicalizeRows = (rows: Record<string, unknown>[]) =>
+    rows.map((w) => ({ ...w, category: canonicalCategoryName(w.category as string | null) ?? (w.category as string | null) }));
   const upsertWalls = async (rows: Record<string, unknown>[]) => {
     for (let i = 0; i < rows.length; i += 100) {
-      const chunk = rows.slice(i, i + 100);
+      const chunk = canonicalizeRows(rows.slice(i, i + 100));
       const { error } = await sb.from('wallpapers').upsert(chunk, { onConflict: 'source,source_id' });
       if (error) throw new Error(`DB upsert failed: ${error.message}`);
     }
@@ -163,16 +169,19 @@ export async function POST(req: NextRequest) {
       const firstCover = catCounts.values().next().value?.cover ?? null;
       await sb.from('categories').upsert(
         [
-          // umbrella "Anime" row so synced libraries expose the whole anime shelf
-          { source: 'animepixels', source_id: '__all', name: 'Anime', slug: 'anime', cover_url: firstCover, wallpaper_count: inserted.animepixels },
-          ...[...catCounts.entries()].map(([name, v]) => ({
-            source: 'animepixels',
-            source_id: name,
-            name,
-            slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-            cover_url: v.cover,
-            wallpaper_count: v.count,
-          })),
+          // umbrella "Anime & Manga" row so synced libraries expose the whole anime shelf
+          { source: 'animepixels', source_id: '__all', name: 'Anime & Manga', slug: 'anime-manga', cover_url: firstCover, wallpaper_count: inserted.animepixels },
+          ...[...catCounts.entries()].map(([rawName, v]) => {
+            const name = canonicalCategoryName(rawName) ?? rawName;
+            return {
+              source: 'animepixels',
+              source_id: rawName,
+              name,
+              slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              cover_url: v.cover,
+              wallpaper_count: v.count,
+            };
+          }),
         ],
         { onConflict: 'source,source_id' },
       );
