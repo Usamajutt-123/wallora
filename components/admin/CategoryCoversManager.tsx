@@ -31,6 +31,7 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
   const [walls, setWalls] = useState<WallPick[]>([]);
   const [loadingWalls, setLoadingWalls] = useState(false);
   const [wallsLoaded, setWallsLoaded] = useState('');
+  const [wallsEmpty, setWallsEmpty] = useState(false);
   const [savingName, setSavingName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -79,6 +80,7 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
     setError('');
     setWalls([]);
     setWallsLoaded('');
+    setWallsEmpty(false);
     setLoadingWalls(true);
     try {
       const res = await fetch(`/api/wallpapers?category=${encodeURIComponent(item.name)}&page=1&perPage=60`, { cache: 'no-store' });
@@ -92,9 +94,10 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
         }))
         .filter((pick: WallPick) => pick.url && pick.url.startsWith('https://'));
       setWalls(picks);
-      setWallsLoaded(picks.length ? `${picks.length} wallpapers` : 'Koi wallpaper nahi mila is category mein.');
+      setWallsEmpty(picks.length === 0);
+      setWallsLoaded(picks.length ? `${picks.length} wallpapers` : 'No wallpapers found in this category.');
     } catch {
-      setError('Wallpapers load nahi ho sake.');
+      setError('Could not load wallpapers.');
     } finally {
       setLoadingWalls(false);
     }
@@ -135,7 +138,7 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
       {error && <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{error}</p>}
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-white/35">Koi category nahi mili.</p>
+        <p className="text-sm text-white/35">No categories found.</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {filtered.map((item) => (
@@ -173,7 +176,7 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
               <div className="min-w-0">
                 <p className="text-[10px] font-display tracking-[0.28em] uppercase text-accent2">Custom cover</p>
                 <h3 className="mt-1 font-display font-bold text-xl truncate">{open.name}</h3>
-                <p className="text-xs text-white/40 mt-0.5">Neeche kisi wallpaper par click karo (set), device se upload karo, ya reset karo.</p>
+                <p className="text-xs text-white/40 mt-0.5">Click any wallpaper below to set it, upload from your device, or reset to the default.</p>
               </div>
               <button type="button" onClick={() => setOpen(null)} className="grid place-items-center w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/15 text-white/60 text-lg transition">×</button>
             </div>
@@ -201,7 +204,7 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
                 type="button"
                 disabled={savingName === open.name}
                 onClick={async () => {
-                  if (confirm(`“${open.name}” ka custom cover hata kar auto cover par wapas karein?`)) {
+                  if (confirm(`Remove the custom cover for “${open.name}” and go back to the auto cover?`)) {
                     await saveCover(open.name, null);
                     setOpen(null);
                   }
@@ -211,14 +214,14 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
                 Reset to default
               </button>
               <span className="text-xs text-white/35">
-                {savingName === open.name ? 'Saving…' : open.custom ? 'Custom cover set hai' : 'Abhi auto cover hai'}
+                {savingName === open.name ? 'Saving…' : open.custom ? 'Custom cover set' : 'Using auto cover'}
               </span>
             </div>
 
             <div className="px-6 py-4 overflow-y-auto flex-1">
               {loadingWalls ? (
                 <p className="text-sm text-white/40">Loading wallpapers…</p>
-              ) : wallsLoaded.startsWith('Koi') ? (
+              ) : wallsEmpty ? (
                 <p className="text-sm text-white/35">{wallsLoaded}</p>
               ) : walls.length ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
@@ -244,7 +247,7 @@ export default function CategoryCoversManager({ items }: { items: CategoryCoverI
             </div>
 
             <div className="px-6 py-3 border-t border-white/[0.07] text-xs text-white/35 flex items-center justify-between">
-              <span>Jis par click karoge wohi cover ban jayega aur site par fauran dikhega.</span>
+              <span>Whichever one you click becomes the cover and appears on the site immediately.</span>
               <button type="button" onClick={() => setOpen(null)} className="font-display text-accent2">Done</button>
             </div>
           </div>

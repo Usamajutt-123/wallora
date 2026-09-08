@@ -57,8 +57,8 @@ export default function LoginForm({ showDefaultHint }: { showDefaultHint: boolea
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
       {showDefaultHint && (
         <p className="mt-3 text-xs text-accent2/80">
-          Supabase admin banaya hai to username+password se login karo; warna default password{' '}
-          <code className="bg-white/10 px-1.5 py-0.5 rounded">wallora-admin</code> (ADMIN_PASSWORD set karo!)
+          If you created a Supabase admin, log in with username + password; otherwise use the default password{' '}
+          <code className="bg-white/10 px-1.5 py-0.5 rounded">wallora-admin</code> (set ADMIN_PASSWORD!)
         </p>
       )}
       <button

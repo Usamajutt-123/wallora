@@ -25,7 +25,7 @@ export default async function BlogIndex() {
         Guides, trends &<span className="text-accent2"> 4K collections</span>
       </h1>
       <p className="mt-4 text-white/50 max-w-xl">
-        Har post ke andar live wallpaper collections ke direct links — parho, scroll karo, download karo.
+        Every post includes direct links to live wallpaper collections — read, scroll and download.
       </p>
 
       {posts.length === 0 ? (

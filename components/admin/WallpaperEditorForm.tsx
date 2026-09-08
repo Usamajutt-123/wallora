@@ -199,7 +199,7 @@ export default function WallpaperEditorForm({ initial }: { initial?: WallpaperEd
                   <span className="text-xs text-white/35">JPG · PNG · WebP · GIF · AVIF, up to 12 MB. The image is saved on ImgBB and this URL is stored in your database.</span>
                 </div>
               </div>
-              <p className="text-xs text-white/35">Ya phir URL paste karo:</p>
+              <p className="text-xs text-white/35">Or paste a URL instead:</p>
               <label>
                 <span className={label}>Full-resolution HTTPS URL *</span>
                 <input type="url" className={field} value={form.image_url} onChange={(e) => set('image_url', e.target.value)} required placeholder="https://i.ibb.co/.../wallpaper.jpg" />
