@@ -48,9 +48,9 @@ export default function PrivacyPage() {
 
       <h2>Cookies</h2>
       <p>
-        Wallora and third-party services may use cookies or similar technologies. Cookies may be used for website
-        functionality, preferences, analytics, security and advertising. You can control or disable cookies
-        through your browser settings; disabling certain cookies may affect some website functionality.
+       Cookies may be used for website functionality, preferences, analytics and security. 
+At present, we do not use advertising cookies. If advertising is introduced in future, 
+cookies may also be used for advertising purposes.
       </p>
 
       <h2>Third-Party Services</h2>
