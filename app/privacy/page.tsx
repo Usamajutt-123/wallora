@@ -56,7 +56,7 @@ cookies may also be used for advertising purposes.
       <h2>Third-Party Services</h2>
       <p>
         Wallora may rely on third-party services for functions such as wallpaper/image APIs, image delivery,
-        analytics, advertising and website infrastructure. These services may process information according to
+        analytics and website infrastructure. These services may process information according to
         their own privacy policies and terms. Wallora does not control the privacy practices of third-party
         services.
       </p>
