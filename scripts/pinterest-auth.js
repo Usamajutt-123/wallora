@@ -42,7 +42,7 @@ const authUrl =
     state,
   }).toString();
 
-console.log('\n1️⃣  Agar browser khud na khule to ye link kholo:\n   ' + authUrl + '\n');
+console.log('\n1️⃣  If the browser does not open by itself, open this link:\n   ' + authUrl + '\n');
 const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', authUrl]] : process.platform === 'darwin' ? ['open', [authUrl]] : ['xdg-open', [authUrl]];
 spawn(opener[0], opener[1], { detached: true, stdio: 'ignore' }).on('error', () => {});
 
@@ -53,7 +53,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Invalid state / no code.');
     return;
   }
-  res.end('Authorization received. Terminal wapas dekho.');
+  res.end('Authorization received. Check the terminal.');
 
   try {
     const response = await fetch('https://api.pinterest.com/v5/oauth/token', {
@@ -67,13 +67,13 @@ const server = http.createServer(async (req, res) => {
     });
     const tok = await response.json().catch(() => ({}));
     if (!response.ok || typeof tok.refresh_token !== 'string' || !tok.refresh_token) {
-      console.log(`❌ Token exchange failed (HTTP ${response.status}). Pinterest ne refresh token return nahi kiya.`);
+      console.log(`❌ Token exchange failed (HTTP ${response.status}). Pinterest did not return a refresh token.`);
       process.exit(1);
     }
-    console.log('\n✅ SUCCESS! Ye line .env.local main paste karo:\n');
+    console.log('\n✅ SUCCESS! Paste this line into .env.local:\n');
     console.log(`PINTEREST_REFRESH_TOKEN=${tok.refresh_token}`);
     console.log(`# PINTEREST_BOARD=WALLORA   (optional — default = your first board)\n`);
-    console.log('Ab daily cron naye wallpapers Pinterest pe pin kar sakti hai. 📌');
+    console.log('The daily cron can now pin new wallpapers to Pinterest. 📌');
     process.exit(0);
   } catch (error) {
     console.log(`❌ Token exchange failed: ${error instanceof Error ? error.message : 'unknown error'}`);
@@ -82,8 +82,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.on('error', (error) => {
-  console.error(`❌ Local callback server start nahi hua: ${error.message}`);
+  console.error(`❌ Local callback server failed to start: ${error.message}`);
   process.exit(1);
 });
 server.listen(3333, 'localhost', () => console.log('⏳ Waiting for Pinterest approval on http://localhost:3333 …'));
-setTimeout(() => { console.log('⏰ timeout 3min — dobara try karo'); process.exit(1); }, 180_000);
+setTimeout(() => { console.log('⏰ timeout 3min — please try again'); process.exit(1); }, 180_000);

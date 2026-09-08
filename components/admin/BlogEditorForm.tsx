@@ -264,7 +264,7 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
           </div>
           <label>
             <span className={label}>Banner / cover URL {form.cover_url ? '(set from your images below)' : ''}</span>
-            <input type="url" className={field} value={form.cover_url} onChange={(e) => set('cover_url', e.target.value)} placeholder="https://i.ibb.co/.../cover.jpg — ya neeche images mein se choose karo" />
+            <input type="url" className={field} value={form.cover_url} onChange={(e) => set('cover_url', e.target.value)} placeholder="https://i.ibb.co/.../cover.jpg — or choose from the images below" />
             <span className="mt-2 block text-xs leading-relaxed text-amber-100/55">Review the actual banner before publishing. Real women/girls, glamour photography and sexualized images are not allowed; illustrated/anime characters are allowed when non-sexualized.</span>
           </label>
         </section>
@@ -293,7 +293,7 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
                 >
                   {uploadingFiles > 0 ? `Uploading ${uploadingFiles} image${uploadingFiles > 1 ? 's' : ''}…` : 'Choose images from device'}
                 </button>
-                <span className="text-xs text-white/35">Ek sath kai files select karo (JPG · PNG · WebP · GIF · AVIF, up to 12 MB each). Har image ImgBB par save hoti hai.</span>
+                <span className="text-xs text-white/35">Select multiple files at once (JPG · PNG · WebP · GIF · AVIF, up to 12 MB each). Every image is saved on ImgBB.</span>
               </div>
               {notice && <p className="mt-3 text-xs text-accent2/80">{notice}</p>}
               {hiddenFileInput}
@@ -309,7 +309,7 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
                 >
                   {categoryLoading ? 'Loading…' : `Load “${form.category.trim() || 'category'}” wallpapers`}
                 </button>
-                <span className="text-xs text-white/35 self-center">Upar likhe Category ke saved wallpapers dikhenge — click kar ke post mein add karo.</span>
+                <span className="text-xs text-white/35 self-center">Saved wallpapers from the Category field above appear here — click to add them to the post.</span>
               </div>
               {categoryLoaded && <p className="text-xs text-white/45">{categoryLoaded}</p>}
               {categoryWalls.length > 0 && (
@@ -338,11 +338,11 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
 
           <div className="pt-1">
             <p className="text-[11px] font-display uppercase tracking-[0.18em] text-white/45 mb-2">
-              Chuni hui images <b className="normal-case text-white/60">({form.images.length})</b>
-              {form.cover_url && form.images.length ? ` — banner: ${form.images.includes(form.cover_url) ? 'woi image jo is par set hai' : 'URL se'}` : ''}
+              Selected images <b className="normal-case text-white/60">({form.images.length})</b>
+              {form.cover_url && form.images.length ? ` — banner: ${form.images.includes(form.cover_url) ? 'the image set here' : 'from URL'}` : ''}
             </p>
             {form.images.length === 0 ? (
-              <p className="text-sm text-white/30">Koi image nahi chuni. Banner ke liye pehli image auto-set hoti hai.</p>
+              <p className="text-sm text-white/30">No image selected yet. The first image is set as the banner automatically.</p>
             ) : (
               <div className="space-y-2">
                 {form.images.map((url, index) => {
@@ -357,7 +357,7 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
                             {isCover ? '★ Banner' : 'Set as banner'}
                           </button>
                           <button type="button" onClick={() => insertAtCursor(url, `Post image ${index + 1}`)} className="rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/60 hover:text-white px-2.5 py-1 text-[10px] font-display uppercase tracking-wider transition">
-                            ⟲ Article mein (cursor par)
+                            ⟲ Insert in article (at cursor)
                           </button>
                           <button type="button" onClick={() => removeImage(url)} className="rounded-lg bg-red-400/10 hover:bg-red-400/20 text-red-300/80 px-2.5 py-1 text-[10px] font-display uppercase tracking-wider transition">
                             Remove
@@ -371,7 +371,7 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
             )}
             {galleryCount > 0 && (
               <p className="mt-2 text-xs text-white/35">
-                {galleryCount} image{galleryCount > 1 ? 's' : ''} post ke end par ek <b>Gallery</b> section mein bhi dikhegi. Aur jo article ke andar insert ki, wo content mein bhi hain.
+                {galleryCount} image{galleryCount > 1 ? 's' : ''} will also appear in a <b>Gallery</b> section at the end of the post. The ones you insert inside the article also stay in the content.
               </p>
             )}
           </div>
@@ -386,7 +386,7 @@ export default function BlogEditorForm({ initial }: { initial?: BlogEditorValue 
             <span className="text-xs text-white/35">{words} words</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-xs leading-relaxed text-white/40">
-            Use <code>## Heading</code>, <code>### Subheading</code>, <code>**bold**</code>, <code>- list</code> and <code>[link text](/search?...)</code>. Do not include the H1 title; the blog page adds it. Images ko <code>![alt](url)</code> se beech mein bhi laga sakte ho (chuni images ka “Article mein” button isi ko insert karta hai).
+            Use <code>## Heading</code>, <code>### Subheading</code>, <code>**bold**</code>, <code>- list</code> and <code>[link text](/search?...)</code>. Do not include the H1 title; the blog page adds it. You can also place images inline with <code>![alt](url)</code> (the “Insert in article” button on a selected image does exactly that).
           </div>
           <textarea
             ref={markdownRef}

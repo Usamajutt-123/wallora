@@ -38,8 +38,8 @@ export default async function CategoryCoversPage({ searchParams }: { searchParam
         <p className="text-xs font-display tracking-[0.24em] uppercase text-accent2">Discover</p>
         <h1 className="mt-1 font-display font-bold text-3xl tracking-tight">Category covers</h1>
         <p className="mt-2 text-sm text-white/45">
-          Home ki “Pick your vibe” aur Categories page ke har card ka cover yahan se set karo — kisi bhi category ke
-          wallpapers mein se choose karo, device se upload karo, ya default par reset.
+          Set the cover for every card in the home page “Pick your vibe” section and on the Categories page —
+          choose from any category’s wallpapers, upload from your device, or reset to the default.
         </p>
       </div>
       <CategoryCoversManager items={items} />
