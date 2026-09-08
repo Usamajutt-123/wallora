@@ -41,14 +41,9 @@ export default function PrivacyPage() {
         analytics providers.
       </p>
 
-      <h2>Advertising</h2>
+                <h2>Advertising</h2>
       <p>
-        Wallora may display advertisements provided by third-party advertising networks. These advertising partners
-        may use cookies, similar technologies or other identifiers to provide, measure or personalize
-        advertisements according to their own policies and applicable laws. Possible advertising providers may
-        include Monetag, Adsterra and Google AdSense — only providers actually configured on the website are
-        displayed. Users should review the privacy policies of the relevant advertising providers for information
-        about their data practices.
+        Currently, Wallora does not display any third-party advertisements. In the future, we may use advertising services like Google AdSense, which may use cookies to serve relevant ads. When we do, this policy will be updated accordingly.
       </p>
 
       <h2>Cookies</h2>
